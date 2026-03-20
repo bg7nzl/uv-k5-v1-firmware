@@ -1,0 +1,19 @@
+---
+description: 将 k5-v4 视为唯一工作区根；路径、构建与改动范围均相对本目录
+alwaysApply: true
+---
+
+# 工作区根目录：k5-v4
+
+本规则在 **以 `k5-v4` 为 Cursor 工作区根**（「打开文件夹」指向本目录）时生效。
+
+## 对助手的约定
+
+1. **范围**：只针对本固件树（`k5-v4`）。不要改上级目录 `uv-k1-k5v3-firmware-custom` 下的 `k5-v1` / `k5-v2` / `k5-v3` 等，除非用户明确要求跨目录操作。
+2. **路径**：一律相对仓库根（即本目录）。例如 `Makefile`、`compile-with-docker.sh`、`app/`、`driver/`、`ui/`。
+3. **构建**：以本目录下 `compile-with-docker.sh` 与 `Dockerfile` 为准；`docker build` 上下文为 `.`，产物在 `compiled-firmware/`（若脚本有挂载）。
+4. **CI**：若需提交流水线，以本仓库（`k5-v4`）配置的 remote / Actions 为准；与外层 monorepo 无自动关联。
+
+## 使用方式（给人看的）
+
+在 Cursor 中选择 **文件 → 打开文件夹 → 选 `k5-v4`**，即可让规则与路径语义与本约定一致。
