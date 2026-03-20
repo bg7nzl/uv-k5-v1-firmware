@@ -349,9 +349,6 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
 #ifdef ENABLE_ALARM
 	{"ALARM",			ACTION_OPT_ALARM},
 #endif
-#ifdef ENABLE_FMRADIO
-	{"FM RADIO",		ACTION_OPT_FM},
-#endif
 #ifdef ENABLE_TX1750
 	{"1750HZ",			ACTION_OPT_1750},
 #endif

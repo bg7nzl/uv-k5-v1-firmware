@@ -1745,6 +1745,13 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 		}
 #endif
 	}
+#ifdef ENABLE_FMRADIO
+	else if (gScreenToDisplay == DISPLAY_FM && gCurrentFunction != FUNCTION_TRANSMIT
+	         && Key != KEY_UP && Key != KEY_DOWN && Key != KEY_EXIT) {
+		/* FM: only UP/DOWN/EXIT; swallow PTT, F, side keys, keypad, etc. */
+		goto Skip;
+	}
+#endif
 	else if (Key != KEY_SIDE1 && Key != KEY_SIDE2 && gScreenToDisplay != DISPLAY_INVALID) {
 		ProcessKeysFunctions[gScreenToDisplay](Key, bKeyPressed, bKeyHeld);
 	}

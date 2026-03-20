@@ -31,9 +31,6 @@
 #include "app/scanner.h"
 #include "audio.h"
 #include "bsp/dp32g030/gpio.h"
-#ifdef ENABLE_FMRADIO
-	#include "driver/bk1080.h"
-#endif
 #include "driver/bk4819.h"
 #include "driver/gpio.h"
 #include "driver/backlight.h"
@@ -42,10 +39,6 @@
 #include "settings.h"
 #include "ui/inputbox.h"
 #include "ui/ui.h"
-
-#if defined(ENABLE_FMRADIO)
-static void ACTION_Scan_FM(bool bRestart);
-#endif
 
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
 static void ACTION_AlarmOr1750(bool b1750);
@@ -81,11 +74,8 @@ void (*action_opt_table[])(void) = {
 	[ACTION_OPT_VOX] = &FUNCTION_NOP,
 #endif
 
-#ifdef ENABLE_FMRADIO
-	[ACTION_OPT_FM] = &ACTION_FM,
-#else
+	/* FM: enter only via F+0; side key ACTION_OPT_FM is NOP (no menu entry). */
 	[ACTION_OPT_FM] = &FUNCTION_NOP,
-#endif
 
 #ifdef ENABLE_ALARM
 	[ACTION_OPT_ALARM] = &ACTION_Alarm,
@@ -175,7 +165,8 @@ void ACTION_Scan(bool bRestart)
 
 #ifdef ENABLE_FMRADIO
 	if (gFmRadioMode) {
-		ACTION_Scan_FM(bRestart);
+		(void)bRestart;
+		gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
 		return;
 	}
 #endif
@@ -352,46 +343,6 @@ void ACTION_FM(void)
 
 		gRequestDisplayScreen = DISPLAY_FM;
 	}
-}
-
-static void ACTION_Scan_FM(bool bRestart)
-{
-	if (FUNCTION_IsRx())
-		return;
-
-	GUI_SelectNextDisplay(DISPLAY_FM);
-
-	gMonitor = false;
-
-	if (gFM_ScanState != FM_SCAN_OFF) {
-		FM_PlayAndUpdate();
-
-#ifdef ENABLE_VOICE
-		gAnotherVoiceID = VOICE_ID_SCANNING_STOP;
-#endif
-		return;
-	}
-
-	uint16_t freq;
-
-	if (bRestart) {
-		gFM_AutoScan = true;
-		gFM_ChannelPosition = 0;
-		FM_EraseChannels();
-		freq = BK1080_GetFreqLoLimit(gEeprom.FM_Band);
-	} else {
-		gFM_AutoScan = false;
-		gFM_ChannelPosition = 0;
-		freq = gEeprom.FM_FrequencyPlaying;
-	}
-
-	BK1080_GetFrequencyDeviation(freq);
-	FM_Tune(freq, 1, bRestart);
-
-#ifdef ENABLE_VOICE
-	gAnotherVoiceID = VOICE_ID_SCANNING_BEGIN;
-#endif
-
 }
 
 #endif
