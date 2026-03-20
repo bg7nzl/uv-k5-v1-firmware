@@ -14,6 +14,9 @@
  *     limitations under the License.
  */
 
+#include "scheduler.h"
+
+#include "ARMCM0.h"
 #include "app/chFrScanner.h"
 #ifdef ENABLE_FMRADIO
 	#include "app/fm.h"
@@ -109,4 +112,18 @@ void SystickHandler(void)
 #endif
 
 	DECREMENT(boot_counter_10ms);
+}
+
+uint32_t SCHEDULER_GetMicros(void)
+{
+	uint32_t ticks;
+	uint32_t sub;
+
+	do {
+		ticks = gGlobalSysTickCounter;
+		sub   = SysTick->LOAD + 1U - SysTick->VAL;
+	} while (ticks != gGlobalSysTickCounter);
+
+	const uint32_t tick_per_us = 48000000U / 1000000U;
+	return ticks * 10000U + sub / tick_per_us;
 }

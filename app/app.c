@@ -42,6 +42,9 @@
 #ifdef ENABLE_UART
 	#include "app/uart.h"
 #endif
+#if defined(ENABLE_DIGMODE)
+	#include "app/digmode.h"
+#endif
 #include "ARMCM0.h"
 #include "audio.h"
 #include "board.h"
@@ -79,6 +82,14 @@ static bool flagSaveChannel;
 
 static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 
+#if defined(ENABLE_DIGMODE)
+static void DIGMODE_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
+{
+	(void)Key;
+	(void)bKeyPressed;
+	(void)bKeyHeld;
+}
+#endif
 
 void (*ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld) = {
 	[DISPLAY_MAIN] = &MAIN_ProcessKeys,
@@ -91,6 +102,10 @@ void (*ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld) 
 
 #ifdef ENABLE_AIRCOPY
 	[DISPLAY_AIRCOPY] = &AIRCOPY_ProcessKeys,
+#endif
+
+#if defined(ENABLE_DIGMODE)
+	[DISPLAY_DIGMODE] = &DIGMODE_ProcessKeys,
 #endif
 };
 
@@ -756,7 +771,11 @@ static void HandleVox(void)
 		else if (gVoxStopCountdown_10ms == 0)
 			gVOX_NoiseDetected = false;
 
-		if (gCurrentFunction == FUNCTION_TRANSMIT && !gPttIsPressed && !gVOX_NoiseDetected) {
+		if (gCurrentFunction == FUNCTION_TRANSMIT && !gPttIsPressed && !gVOX_NoiseDetected
+#if defined(ENABLE_DIGMODE)
+		    && !gDigmodeEntered
+#endif
+		    ) {
 			if (gFlagEndTransmission) {
 				//if (gCurrentFunction != FUNCTION_FOREGROUND)
 					FUNCTION_Select(FUNCTION_FOREGROUND);
@@ -805,7 +824,11 @@ void APP_Update(void)
 	}
 #endif
 
-	if (gCurrentFunction == FUNCTION_TRANSMIT && (gTxTimeoutReached || SerialConfigInProgress()))
+	if (gCurrentFunction == FUNCTION_TRANSMIT && (gTxTimeoutReached || SerialConfigInProgress())
+#if defined(ENABLE_DIGMODE)
+	    && !gDigmodeEntered
+#endif
+	    )
 	{	// transmitter timed out or must de-key
 		gTxTimeoutReached = false;
 
@@ -1126,6 +1149,10 @@ void APP_TimeSlice10ms(void)
 			UI_DisplayAudioBar();
 #endif
 	}
+
+#if defined(ENABLE_DIGMODE)
+	DIGMODE_Poll();
+#endif
 
 	if (gUpdateDisplay) {
 		gUpdateDisplay = false;
@@ -1528,6 +1555,11 @@ static void ALARM_Off(void)
 
 static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
+#if defined(ENABLE_DIGMODE)
+	if (gDigmodeEntered && Key == KEY_PTT)
+		return;
+#endif
+
 	if (Key == KEY_EXIT && !BACKLIGHT_IsOn() && gEeprom.BACKLIGHT_TIME > 0)
 	{	// just turn the light on for now so the user can see what's what
 		BACKLIGHT_TurnOn();

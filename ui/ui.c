@@ -29,6 +29,9 @@
 #ifdef ENABLE_AIRCOPY
 	#include "ui/aircopy.h"
 #endif
+#if defined(ENABLE_DIGMODE)
+	#include "ui/digmode.h"
+#endif
 #ifdef ENABLE_FMRADIO
 	#include "ui/fmradio.h"
 #endif
@@ -58,6 +61,10 @@ void (*UI_DisplayFunctions[])(void) = {
 
 #ifdef ENABLE_AIRCOPY
 	[DISPLAY_AIRCOPY] = &UI_DisplayAircopy,
+#endif
+
+#if defined(ENABLE_DIGMODE)
+	[DISPLAY_DIGMODE] = &UI_DisplayDigmode,
 #endif
 };
 

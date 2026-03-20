@@ -13,8 +13,8 @@ ENABLE_VOX                    ?= 1
 ENABLE_ALARM                  ?= 0
 ENABLE_TX1750                 ?= 0
 ENABLE_PWRON_PASSWORD         ?= 0
-ENABLE_DTMF                   ?= 1
-ENABLE_DTMF_CALLING           ?= 1
+ENABLE_DTMF                   ?= 0
+ENABLE_DTMF_CALLING           ?= 0
 ENABLE_FLASHLIGHT             ?= 1
 
 # Total DTMF off: ignore CALLING and do not define it
@@ -46,6 +46,15 @@ ENABLE_REDUCE_LOW_MID_TX_POWER?= 0
 ENABLE_BYP_RAW_DEMODULATORS   ?= 0
 ENABLE_BLMIN_TMP_OFF          ?= 0
 ENABLE_SCAN_RANGES            ?= 1
+
+# UART digital modes (FT8 etc.); requires ENABLE_UART=1
+ENABLE_DIGMODE                ?= 0
+
+ifeq ($(ENABLE_DIGMODE),1)
+ifneq ($(ENABLE_UART),1)
+$(error ENABLE_DIGMODE=1 requires ENABLE_UART=1)
+endif
+endif
 
 # ---- DEBUGGING ----
 ENABLE_AM_FIX_SHOW_DATA       ?= 0
@@ -139,6 +148,11 @@ endif
 OBJS += app/scanner.o
 ifeq ($(ENABLE_UART),1)
 	OBJS += app/uart.o
+endif
+ifeq ($(ENABLE_DIGMODE),1)
+	OBJS += app/digmode.o
+	OBJS += ui/digmode.o
+	OBJS += dsp/vernier.o
 endif
 ifeq ($(ENABLE_AM_FIX), 1)
 	OBJS += am_fix.o
@@ -276,6 +290,9 @@ ifeq ($(ENABLE_FMRADIO),1)
 endif
 ifeq ($(ENABLE_UART),1)
 	CFLAGS += -DENABLE_UART
+endif
+ifeq ($(ENABLE_DIGMODE),1)
+	CFLAGS += -DENABLE_DIGMODE
 endif
 ifeq ($(ENABLE_BIG_FREQ),1)
 	CFLAGS  += -DENABLE_BIG_FREQ

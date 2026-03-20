@@ -42,8 +42,12 @@
 	#include "sram-overlay.h"
 #endif
 
+#if defined(ENABLE_DIGMODE)
+	#include "app/digmode.h"
+#endif
 
 #define DMA_INDEX(x, y) (((x) + (y)) % sizeof(UART_DMA_Buffer))
+#define UART_DMA_BUF_SIZE (sizeof(UART_DMA_Buffer))
 
 typedef struct {
 	uint16_t ID;
@@ -479,15 +483,23 @@ bool UART_IsCommandAvailable(void)
 	uint16_t Size;
 	uint16_t CRC;
 	uint16_t CommandLength;
-	uint16_t DmaLength = DMA_CH0->ST & 0xFFFU;
+	const uint16_t DmaLength = DMA_CH0->ST & 0xFFFU;
+	uint16_t       outer     = UART_DMA_BUF_SIZE + 1U;
+	bool           haveCps   = false;
 
-	while (1)
-	{
+	while (outer--) {
 		if (gUART_WriteIndex == DmaLength)
 			return false;
 
-		while (gUART_WriteIndex != DmaLength && UART_DMA_Buffer[gUART_WriteIndex] != 0xABU)
+		uint16_t searchLimit = UART_DMA_BUF_SIZE;
+		while (gUART_WriteIndex != DmaLength && UART_DMA_Buffer[gUART_WriteIndex] != 0xABU
+		       && searchLimit--)
 			gUART_WriteIndex = DMA_INDEX(gUART_WriteIndex, 1);
+
+		if (searchLimit == 0) {
+			gUART_WriteIndex = DmaLength;
+			return false;
+		}
 
 		if (gUART_WriteIndex == DmaLength)
 			return false;
@@ -495,21 +507,45 @@ bool UART_IsCommandAvailable(void)
 		if (gUART_WriteIndex < DmaLength)
 			CommandLength = DmaLength - gUART_WriteIndex;
 		else
-			CommandLength = (DmaLength + sizeof(UART_DMA_Buffer)) - gUART_WriteIndex;
+			CommandLength = (DmaLength + UART_DMA_BUF_SIZE) - gUART_WriteIndex;
 
-		if (CommandLength < 8)
-			return 0;
+		if (CommandLength < 2)
+			return false;
 
-		if (UART_DMA_Buffer[DMA_INDEX(gUART_WriteIndex, 1)] == 0xCD)
+		if (UART_DMA_Buffer[DMA_INDEX(gUART_WriteIndex, 1)] == 0xCD) {
+			if (CommandLength < 8)
+				return false;
+			haveCps = true;
 			break;
+		}
+
+#if defined(ENABLE_DIGMODE)
+		{
+			const uint8_t nextByte = UART_DMA_Buffer[DMA_INDEX(gUART_WriteIndex, 1)];
+			if (nextByte >= 0x01 && nextByte <= DIGMODE_MAX_CMD) {
+				const uint16_t consumed = DIGMODE_ProcessByte(
+				    UART_DMA_Buffer, CommandLength, UART_DMA_BUF_SIZE, gUART_WriteIndex);
+				if (consumed == 0)
+					return false;
+				for (uint16_t k = 0; k < consumed; k++)
+					gUART_WriteIndex = DMA_INDEX(gUART_WriteIndex, 1);
+				continue;
+			}
+		}
+#endif
 
 		gUART_WriteIndex = DMA_INDEX(gUART_WriteIndex, 1);
+	}
+
+	if (!haveCps) {
+		gUART_WriteIndex = DmaLength;
+		return false;
 	}
 
 	Index = DMA_INDEX(gUART_WriteIndex, 2);
 	Size  = (UART_DMA_Buffer[DMA_INDEX(Index, 1)] << 8) | UART_DMA_Buffer[Index];
 
-	if ((Size + 8u) > sizeof(UART_DMA_Buffer))
+	if ((Size + 8u) > UART_DMA_BUF_SIZE)
 	{
 		gUART_WriteIndex = DmaLength;
 		return false;
@@ -529,7 +565,7 @@ bool UART_IsCommandAvailable(void)
 
 	if (TailIndex < Index)
 	{
-		const uint16_t ChunkSize = sizeof(UART_DMA_Buffer) - Index;
+		const uint16_t ChunkSize = UART_DMA_BUF_SIZE - Index;
 		memcpy(UART_Command.Buffer, UART_DMA_Buffer + Index, ChunkSize);
 		memcpy(UART_Command.Buffer + ChunkSize, UART_DMA_Buffer, TailIndex);
 	}
@@ -539,11 +575,11 @@ bool UART_IsCommandAvailable(void)
 	TailIndex = DMA_INDEX(TailIndex, 2);
 	if (TailIndex < gUART_WriteIndex)
 	{
-		memset(UART_DMA_Buffer + gUART_WriteIndex, 0, sizeof(UART_DMA_Buffer) - gUART_WriteIndex);
+		memset(UART_DMA_Buffer + gUART_WriteIndex, 0, UART_DMA_BUF_SIZE - gUART_WriteIndex);
 		memset(UART_DMA_Buffer, 0, TailIndex);
 	}
 	else
-		memset(UART_DMA_Buffer + gUART_WriteIndex, 0, TailIndex - gUART_WriteIndex);
+		memset(UART_DMA_Buffer + gUART_WriteIndex, 0, (size_t)(TailIndex - gUART_WriteIndex));
 
 	gUART_WriteIndex = TailIndex;
 

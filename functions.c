@@ -186,16 +186,29 @@ void FUNCTION_Transmit()
 
 	GUI_DisplayScreen();
 
+	const bool isCw = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_CW);
+	if (isCw)
+		RADIO_SetModulation(MODULATION_FM);
+
 	RADIO_SetTxParameters();
+
+	if (isCw) {
+		BK4819_SetAF(BK4819_AF_MUTE);
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x0000);
+		AUDIO_AudioPathOn();
+		gEnableSpeaker = true;
+		BK4819_TransmitTone(true, 650);
+	}
 
 	// turn the RED LED on
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);
 
 #ifdef ENABLE_DTMF
-	DTMF_Reply();
+	if (!isCw)
+		DTMF_Reply();
 #endif
 
-	if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
+	if (!isCw && gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
 		BK4819_PlaySingleTone(2525, 250, 0, gEeprom.DTMF_SIDE_TONE);
 
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
@@ -220,7 +233,7 @@ void FUNCTION_Transmit()
 	}
 #endif
 
-	if (gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
+	if (!isCw && gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
 		BK4819_EnableScramble(gCurrentVfo->SCRAMBLING_TYPE - 1);
 	else
 		BK4819_DisableScramble();

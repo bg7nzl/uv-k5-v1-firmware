@@ -34,6 +34,10 @@ enum GUI_DisplayType_t
 	DISPLAY_AIRCOPY,
 #endif
 
+#if defined(ENABLE_DIGMODE)
+	DISPLAY_DIGMODE,
+#endif
+
 	DISPLAY_N_ELEM,
 	DISPLAY_INVALID = 0xFFu
 };
