@@ -21,7 +21,9 @@
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
+#ifdef ENABLE_DTMF
 #include "app/dtmf.h"
+#endif
 #ifdef ENABLE_FLASHLIGHT
 	#include "app/flashlight.h"
 #endif
@@ -181,8 +183,10 @@ void ACTION_Scan(bool bRestart)
 #ifdef ENABLE_DTMF_CALLING
 	DTMF_clear_RX();
 #endif
+#ifdef ENABLE_DTMF
 	gDTMF_RX_live_timeout = 0;
 	memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+#endif
 
 	RADIO_SelectVfos();
 
@@ -245,12 +249,13 @@ void ACTION_SwitchDemodul(void)
 
 void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
-	if (gScreenToDisplay == DISPLAY_MAIN && gDTMF_InputMode){
+#ifdef ENABLE_DTMF
+	if (gScreenToDisplay == DISPLAY_MAIN && gDTMF_InputMode) {
 		 // entering DTMF code
 
 		gPttWasReleased = true;
 
-		if (Key != KEY_SIDE1 || bKeyHeld || !bKeyPressed){
+		if (Key != KEY_SIDE1 || bKeyHeld || !bKeyPressed) {
 			return;
 		}
 
@@ -273,6 +278,7 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 #endif
 		return;
 	}
+#endif
 
 	enum ACTION_OPT_t funcShort = ACTION_OPT_NONE;
 	enum ACTION_OPT_t funcLong  = ACTION_OPT_NONE;

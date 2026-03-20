@@ -64,7 +64,7 @@ void UI_DisplayStatus()
 	x += sizeof(BITMAP_NOAA);
 #endif
 
-#ifdef ENABLE_DTMF_CALLING
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
 	if (gSetting_KILLED) {
 		memset(line + x, 0xFF, 10);
 		x1 = x + 10;

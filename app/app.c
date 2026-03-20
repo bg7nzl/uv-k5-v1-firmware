@@ -26,7 +26,9 @@
 #endif
 #include "app/app.h"
 #include "app/chFrScanner.h"
+#ifdef ENABLE_DTMF
 #include "app/dtmf.h"
+#endif
 #ifdef ENABLE_FLASHLIGHT
 	#include "app/flashlight.h"
 #endif
@@ -53,7 +55,6 @@
 #include "driver/keyboard.h"
 #include "driver/st7565.h"
 #include "driver/system.h"
-#include "dtmf.h"
 #include "external/printf/printf.h"
 #include "frequencies.h"
 #include "functions.h"
@@ -417,7 +418,7 @@ void APP_StartListening(FUNCTION_Type_t function)
 {
 	const unsigned int vfo = gEeprom.RX_VFO;
 
-#ifdef ENABLE_DTMF_CALLING
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
 	if (gSetting_KILLED)
 		return;
 #endif
@@ -600,7 +601,8 @@ static void CheckRadioInterrupts(void)
 //		if (ctcss_shift > 0)
 //			g_CTCSS_Lost = true;
 
-		if (interrupts.dtmf5ToneFound) {	
+#ifdef ENABLE_DTMF
+		if (interrupts.dtmf5ToneFound) {
 			const char c = DTMF_GetCharacter(BK4819_GetDTMF_5TONE_Code()); // save the RX'ed DTMF character
 			if (c != 0xff) {
 				if (gCurrentFunction != FUNCTION_TRANSMIT) {
@@ -626,7 +628,7 @@ static void CheckRadioInterrupts(void)
 						gDTMF_RX[gDTMF_RX_index]   = 0;
 						gDTMF_RX_timeout           = DTMF_RX_timeout_500ms;  // time till we delete it
 						gDTMF_RX_pending           = true;
-						
+
 						SYSTEM_DelayMs(3);//fix DTMF not reply@Yurisu
 						DTMF_HandleRequest();
 					}
@@ -634,6 +636,7 @@ static void CheckRadioInterrupts(void)
 				}
 			}
 		}
+#endif
 
 		if (interrupts.cssTailFound)
 			g_CxCSS_TAIL_Found = true;
@@ -722,7 +725,7 @@ void APP_EndTransmission(void)
 #ifdef ENABLE_VOX
 static void HandleVox(void)
 {
-#ifdef ENABLE_DTMF_CALLING
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
 	if (gSetting_KILLED)
 		return;
 #endif
@@ -976,8 +979,8 @@ void APP_Update(void)
 // called every 10ms
 static void CheckKeys(void)
 {
-#ifdef ENABLE_DTMF_CALLING
-	if(gSetting_KILLED){
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
+	if (gSetting_KILLED) {
 		return;
 	}
 #endif
@@ -1236,6 +1239,7 @@ void APP_TimeSlice10ms(void)
 
 void cancelUserInputModes(void)
 {
+#ifdef ENABLE_DTMF
 	if (gDTMF_InputMode || gDTMF_InputBox_Index > 0)
 	{
 		DTMF_clear_input_box();
@@ -1243,6 +1247,7 @@ void cancelUserInputModes(void)
 		gRequestDisplayScreen = DISPLAY_MAIN;
 		gUpdateDisplay        = true;
 	}
+#endif
 
 	if (gWasFKeyPressed || gKeyInputCountdown > 0 || gInputBoxIndex > 0)
 	{
@@ -1281,6 +1286,7 @@ void APP_TimeSlice500ms(void)
 		}
 	}
 
+#ifdef ENABLE_DTMF
 	if (gDTMF_RX_live_timeout > 0)
 	{
 		#ifdef ENABLE_RSSI_BAR
@@ -1298,6 +1304,7 @@ void APP_TimeSlice500ms(void)
 			}
 		}
 	}
+#endif
 
 	if (gMenuCountdown > 0)
 		if (--gMenuCountdown == 0)
@@ -1380,7 +1387,10 @@ void APP_TimeSlice500ms(void)
 		&& gScreenToDisplay != DISPLAY_AIRCOPY
 #endif
 	) {
-		if (gEeprom.AUTO_KEYPAD_LOCK && gKeyLockCountdown > 0 && !gDTMF_InputMode
+		if (gEeprom.AUTO_KEYPAD_LOCK && gKeyLockCountdown > 0
+#ifdef ENABLE_DTMF
+			&& !gDTMF_InputMode
+#endif
 			&& gScreenToDisplay != DISPLAY_MENU && --gKeyLockCountdown == 0)
 		{
 			gEeprom.KEY_LOCK = true;     // lock the keyboard
@@ -1394,7 +1404,11 @@ void APP_TimeSlice500ms(void)
 				BACKLIGHT_TurnOff();
 			}
 
-			if (gInputBoxIndex > 0 || gDTMF_InputMode) {
+			if (gInputBoxIndex > 0
+#ifdef ENABLE_DTMF
+				|| gDTMF_InputMode
+#endif
+			) {
 				AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL);
 			}
 /*
@@ -1407,7 +1421,9 @@ void APP_TimeSlice500ms(void)
 				RADIO_SetupRegisters(true);
 			}
 */
+#ifdef ENABLE_DTMF
 			DTMF_clear_input_box();
+#endif
 
 			gWasFKeyPressed  = false;
 			gInputBoxIndex   = 0;
@@ -1566,12 +1582,14 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 		}
 
 		if (Key == KEY_EXIT && bKeyHeld) { // exit key held pressed
+#ifdef ENABLE_DTMF
 			// clear the live DTMF decoder
 			if (gDTMF_RX_live[0] != 0) {
 				memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
 				gDTMF_RX_live_timeout = 0;
 				gUpdateDisplay        = true;
 			}
+#endif
 
 			// cancel user input
 			cancelUserInputModes();
@@ -1694,12 +1712,18 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 			if (Key == KEY_SIDE2) { // transmit 1750Hz tone
 				Code = 0xFE;
 			}
+#ifdef ENABLE_DTMF
 			else {
 				Code = DTMF_GetCharacter(Key - KEY_0);
 				if (Code == 0xFF)
 					goto Skip;
 				// transmit DTMF keys
 			}
+#else
+			else {
+				goto Skip;
+			}
+#endif
 
 			if (!bKeyPressed || bKeyHeld) {
 				if (!bKeyPressed) {
@@ -1707,7 +1731,9 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 					gEnableSpeaker = false;
 
+#ifdef ENABLE_DTMF
 					BK4819_ExitDTMF_TX(false);
+#endif
 
 					if (gCurrentVfo->SCRAMBLING_TYPE == 0 || !gSetting_ScrambleEnable)
 						BK4819_DisableScramble();
@@ -1725,8 +1751,10 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 				if (Code == 0xFE)
 					BK4819_TransmitTone(gEeprom.DTMF_SIDE_TONE, 1750);
+#ifdef ENABLE_DTMF
 				else
 					BK4819_PlayDTMFEx(gEeprom.DTMF_SIDE_TONE, Code);
+#endif
 			}
 		}
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)

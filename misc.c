@@ -29,7 +29,9 @@ const uint8_t     vfo_state_resume_countdown_500ms =  2500 / 500;  // 2.5 second
 const uint8_t     menu_timeout_500ms               =  20000 / 500;  // 20 seconds
 const uint16_t    menu_timeout_long_500ms          = 120000 / 500;  // 2 minutes
 
+#ifdef ENABLE_DTMF
 const uint8_t     DTMF_RX_live_timeout_500ms       =  6000 / 500;  // 6 seconds live decoder on screen
+#endif
 #ifdef ENABLE_DTMF_CALLING
 const uint8_t     DTMF_RX_timeout_500ms            = 10000 / 500;  // 10 seconds till we wipe the DTMF receiver
 const uint8_t     DTMF_decode_ring_countdown_500ms = 15000 / 500;  // 15 seconds .. time we sound the ringing for
@@ -80,7 +82,7 @@ const uint32_t    gDefaultAesKey[4]                = {0x4AA5CC60, 0x0312CC5F, 0x
 const uint8_t     gMicGain_dB2[5]                  = {3, 8, 16, 24, 31};
 
 bool              gSetting_350TX;
-#ifdef ENABLE_DTMF_CALLING
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
 bool              gSetting_KILLED;
 #endif
 bool              gSetting_200TX;

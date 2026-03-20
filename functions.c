@@ -16,7 +16,9 @@
 
 #include <string.h>
 
+#ifdef ENABLE_DTMF
 #include "app/dtmf.h"
+#endif
 #if defined(ENABLE_FMRADIO)
 	#include "app/fm.h"
 #endif
@@ -88,7 +90,7 @@ void FUNCTION_Init(void)
 
 void FUNCTION_Foreground(const FUNCTION_Type_t PreviousFunction)
 {
-#ifdef ENABLE_DTMF_CALLING
+#ifdef ENABLE_DTMF
 	if (gDTMF_ReplyState != DTMF_REPLY_NONE)
 		RADIO_PrepareCssTX();
 #endif
@@ -146,9 +148,11 @@ void FUNCTION_Transmit()
 	DTMF_clear_RX();
 #endif
 
+#ifdef ENABLE_DTMF
 	// clear the DTMF RX live decoder buffer
 	gDTMF_RX_live_timeout = 0;
 	memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+#endif
 
 #if defined(ENABLE_FMRADIO)
 	if (gFmRadioMode)
@@ -187,7 +191,9 @@ void FUNCTION_Transmit()
 	// turn the RED LED on
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);
 
+#ifdef ENABLE_DTMF
 	DTMF_Reply();
+#endif
 
 	if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
 		BK4819_PlaySingleTone(2525, 250, 0, gEeprom.DTMF_SIDE_TONE);

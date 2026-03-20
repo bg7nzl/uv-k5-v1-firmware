@@ -93,7 +93,8 @@ You'll find the options at the top of "Makefile" ('0' = disable, '1' = enable) .
 | ENABLE_ALARM | TX alarms |
 | ENABLE_TX1750 | side key 1750Hz TX tone (older style repeater access)|
 | ENABLE_PWRON_PASSWORD | power-on password stuff |
-| ENABLE_DTMF_CALLING | DTMF calling fuctionality, sending calls, receiving calls, group calls, contacts list etc. |
+| ENABLE_DTMF | master switch for all DTMF features (encoder/decoder UI, `app/dtmf.o`, BK4819 DTMF IRQ path). When `0`, `ENABLE_DTMF_CALLING` is forced off. EEPROM layout for DTMF-related global and per-channel fields stays compatible with full builds so you can flash back and forth without losing stored codes. |
+| ENABLE_DTMF_CALLING | DTMF calling functionality (ANI, kill/revive, contacts, group calls, etc.); only applies when `ENABLE_DTMF` is `1`. |
 | ENABLE_FLASHLIGHT | enable top flashlight LED (on, blink, SOS) |
 |🧰 **CUSTOM MODS**||
 | ENABLE_BIG_FREQ | big font frequencies (like original QS firmware) |

@@ -13,8 +13,14 @@ ENABLE_VOX                    ?= 1
 ENABLE_ALARM                  ?= 0
 ENABLE_TX1750                 ?= 0
 ENABLE_PWRON_PASSWORD         ?= 0
+ENABLE_DTMF                   ?= 1
 ENABLE_DTMF_CALLING           ?= 1
 ENABLE_FLASHLIGHT             ?= 1
+
+# Total DTMF off: ignore CALLING and do not define it
+ifeq ($(ENABLE_DTMF),0)
+	override ENABLE_DTMF_CALLING := 0
+endif
 
 # ---- CUSTOM MODS ----
 ENABLE_BIG_FREQ               ?= 1
@@ -115,7 +121,9 @@ endif
 OBJS += app/app.o
 OBJS += app/chFrScanner.o
 OBJS += app/common.o
+ifeq ($(ENABLE_DTMF),1)
 OBJS += app/dtmf.o
+endif
 ifeq ($(ENABLE_FLASHLIGHT),1)
 	OBJS += app/flashlight.o
 endif
@@ -362,8 +370,11 @@ endif
 ifeq ($(ENABLE_SCAN_RANGES),1)
 	CFLAGS  += -DENABLE_SCAN_RANGES
 endif
+ifeq ($(ENABLE_DTMF),1)
+	CFLAGS  += -DENABLE_DTMF
 ifeq ($(ENABLE_DTMF_CALLING),1)
 	CFLAGS  += -DENABLE_DTMF_CALLING
+endif
 endif
 ifeq ($(ENABLE_AGC_SHOW_DATA),1)
 	CFLAGS  += -DENABLE_AGC_SHOW_DATA

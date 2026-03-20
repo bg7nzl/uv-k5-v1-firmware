@@ -18,7 +18,9 @@
 #include <stdlib.h>  // abs()
 
 #include "app/chFrScanner.h"
+#ifdef ENABLE_DTMF
 #include "app/dtmf.h"
+#endif
 #ifdef ENABLE_AM_FIX
 	#include "am_fix.h"
 #endif
@@ -350,15 +352,15 @@ void UI_DisplayMain(void)
 			}
 #endif
 
-
+#ifdef ENABLE_DTMF
 			if (gDTMF_InputMode
-#ifdef ENABLE_DTMF_CALLING
+# ifdef ENABLE_DTMF_CALLING
 				|| gDTMF_CallState != DTMF_CALL_STATE_NONE || gDTMF_IsTx
-#endif
+# endif
 			) {
 				char *pPrintStr = "";
 				// show DTMF stuff
-#ifdef ENABLE_DTMF_CALLING
+# ifdef ENABLE_DTMF_CALLING
 				char Contact[16];
 				if (!gDTMF_InputMode) {
 					if (gDTMF_CallState == DTMF_CALL_STATE_CALL_OUT) {
@@ -384,7 +386,7 @@ void UI_DisplayMain(void)
 					}
 				}
 				else
-#endif
+# endif
 				{
 					sprintf(String, ">%s", gDTMF_InputBox);
 					pPrintStr = String;
@@ -395,6 +397,7 @@ void UI_DisplayMain(void)
 				center_line = CENTER_LINE_IN_USE;
 				continue;
 			}
+#endif
 
 			// highlight the selected/used VFO with a marker
 			if (isMainVFO)
@@ -680,7 +683,7 @@ void UI_DisplayMain(void)
 		if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_NARROW)
 			UI_PrintStringSmallNormal("N", LCD_WIDTH + 70, 0, line + 1);
 
-#ifdef ENABLE_DTMF_CALLING
+#if !defined(ENABLE_DTMF) || defined(ENABLE_DTMF_CALLING)
 		// show the DTMF decoding symbol
 		if (vfoInfo->DTMF_DECODING_ENABLE || gSetting_KILLED)
 			UI_PrintStringSmallNormal("DTMF", LCD_WIDTH + 78, 0, line + 1);
@@ -735,43 +738,30 @@ void UI_DisplayMain(void)
 #endif
 		if (rx || gCurrentFunction == FUNCTION_FOREGROUND || gCurrentFunction == FUNCTION_POWER_SAVE)
 		{
-			#if 1
-				if (gSetting_live_DTMF_decoder && gDTMF_RX_live[0] != 0)
-				{	// show live DTMF decode
-					const unsigned int len = strlen(gDTMF_RX_live);
-					const unsigned int idx = (len > (17 - 5)) ? len - (17 - 5) : 0;  // limit to last 'n' chars
+#ifdef ENABLE_DTMF
+			if (gSetting_live_DTMF_decoder && gDTMF_RX_live[0] != 0)
+			{	// show live DTMF decode
+				const unsigned int len = strlen(gDTMF_RX_live);
+				const unsigned int idx = (len > (17 - 5)) ? len - (17 - 5) : 0;  // limit to last 'n' chars
 
-					if (gScreenToDisplay != DISPLAY_MAIN
-#ifdef ENABLE_DTMF_CALLING
-						|| gDTMF_CallState != DTMF_CALL_STATE_NONE
+				if (gScreenToDisplay != DISPLAY_MAIN
+# ifdef ENABLE_DTMF_CALLING
+					|| gDTMF_CallState != DTMF_CALL_STATE_NONE
+# endif
+					)
+					return;
+
+				center_line = CENTER_LINE_DTMF_DEC;
+
+				sprintf(String, "DTMF %s", gDTMF_RX_live + idx);
+				UI_PrintStringSmallNormal(String, 2, 0, 3);
+			}
+# ifdef ENABLE_SHOW_CHARGE_LEVEL
+			else
+# endif
 #endif
-						)
-						return;
-
-					center_line = CENTER_LINE_DTMF_DEC;
-
-					sprintf(String, "DTMF %s", gDTMF_RX_live + idx);
-					UI_PrintStringSmallNormal(String, 2, 0, 3);
-				}
-			#else
-				if (gSetting_live_DTMF_decoder && gDTMF_RX_index > 0)
-				{	// show live DTMF decode
-					const unsigned int len = gDTMF_RX_index;
-					const unsigned int idx = (len > (17 - 5)) ? len - (17 - 5) : 0;  // limit to last 'n' chars
-
-					if (gScreenToDisplay != DISPLAY_MAIN ||
-						gDTMF_CallState != DTMF_CALL_STATE_NONE)
-						return;
-
-					center_line = CENTER_LINE_DTMF_DEC;
-
-					sprintf(String, "DTMF %s", gDTMF_RX_live + idx);
-					UI_PrintStringSmallNormal(String, 2, 0, 3);
-				}
-			#endif
-
 #ifdef ENABLE_SHOW_CHARGE_LEVEL
-			else if (gChargingWithTypeC)
+			if (gChargingWithTypeC)
 			{	// charging .. show the battery state
 				if (gScreenToDisplay != DISPLAY_MAIN
 #ifdef ENABLE_DTMF_CALLING

@@ -17,7 +17,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef ENABLE_DTMF
 #include "../app/dtmf.h"
+#endif
 #include "../app/menu.h"
 #include "../bitmaps.h"
 #include "../board.h"
@@ -97,23 +99,25 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_ALARM
 	{"AlarmT", VOICE_ID_INVALID,                       MENU_AL_MOD        },
 #endif
-#ifdef ENABLE_DTMF_CALLING
+#ifdef ENABLE_DTMF
+# ifdef ENABLE_DTMF_CALLING
 	{"ANI ID", VOICE_ID_ANI_CODE,                      MENU_ANI_ID        },
-#endif
+# endif
 	{"UPCode", VOICE_ID_INVALID,                       MENU_UPCODE        },
 	{"DWCode", VOICE_ID_INVALID,                       MENU_DWCODE        },
 	{"PTT ID", VOICE_ID_INVALID,                       MENU_PTT_ID        },
 	{"D ST",   VOICE_ID_INVALID,                       MENU_D_ST          },
-#ifdef ENABLE_DTMF_CALLING
-    {"D Resp", VOICE_ID_INVALID,                       MENU_D_RSP         },
+# ifdef ENABLE_DTMF_CALLING
+	{"D Resp", VOICE_ID_INVALID,                       MENU_D_RSP         },
 	{"D Hold", VOICE_ID_INVALID,                       MENU_D_HOLD        },
-#endif
+# endif
 	{"D Prel", VOICE_ID_INVALID,                       MENU_D_PRE         },
-#ifdef ENABLE_DTMF_CALLING
+# ifdef ENABLE_DTMF_CALLING
 	{"D Decd", VOICE_ID_INVALID,                       MENU_D_DCD         },
 	{"D List", VOICE_ID_INVALID,                       MENU_D_LIST        },
-#endif
+# endif
 	{"D Live", VOICE_ID_INVALID,                       MENU_D_LIVE_DEC    }, // live DTMF decoder
+#endif
 #ifdef ENABLE_AM_FIX
 	{"AM Fix", VOICE_ID_INVALID,                       MENU_AM_FIX        },
 #endif
@@ -617,11 +621,13 @@ void UI_DisplayMenu(void)
 		case MENU_S_ADD1:
 		case MENU_S_ADD2:
 		case MENU_STE:
+#ifdef ENABLE_DTMF
 		case MENU_D_ST:
-#ifdef ENABLE_DTMF_CALLING
+# ifdef ENABLE_DTMF_CALLING
 		case MENU_D_DCD:
-#endif
+# endif
 		case MENU_D_LIVE_DEC:
+#endif
 		#ifdef ENABLE_NOAA
 			case MENU_NOAA_S:
 		#endif
@@ -736,11 +742,12 @@ void UI_DisplayMenu(void)
 				break;
 		#endif
 
-#ifdef ENABLE_DTMF_CALLING
+#ifdef ENABLE_DTMF
+# ifdef ENABLE_DTMF_CALLING
 		case MENU_ANI_ID:
 			strcpy(String, gEeprom.ANI_DTMF_ID);
 			break;
-#endif
+# endif
 		case MENU_UPCODE:
 			sprintf(String, "%.8s\n%.8s", gEeprom.DTMF_UP_CODE, gEeprom.DTMF_UP_CODE + 8);
 			break;
@@ -749,7 +756,7 @@ void UI_DisplayMenu(void)
 			sprintf(String, "%.8s\n%.8s", gEeprom.DTMF_DOWN_CODE, gEeprom.DTMF_DOWN_CODE + 8);
 			break;
 
-#ifdef ENABLE_DTMF_CALLING
+# ifdef ENABLE_DTMF_CALLING
 		case MENU_D_RSP:
 			strcpy(String, gSubMenu_D_RSP[gSubMenuSelection]);
 			break;
@@ -757,7 +764,7 @@ void UI_DisplayMenu(void)
 		case MENU_D_HOLD:
 			sprintf(String, "%ds", gSubMenuSelection);
 			break;
-#endif
+# endif
 		case MENU_D_PRE:
 			sprintf(String, "%d*10ms", gSubMenuSelection);
 			break;
@@ -765,12 +772,14 @@ void UI_DisplayMenu(void)
 		case MENU_PTT_ID:
 			strcpy(String, gSubMenu_PTT_ID[gSubMenuSelection]);
 			break;
+#endif
 
 		case MENU_BAT_TXT:
 			strcpy(String, gSubMenu_BAT_TXT[gSubMenuSelection]);
 			break;
 
-#ifdef ENABLE_DTMF_CALLING
+#ifdef ENABLE_DTMF
+# ifdef ENABLE_DTMF_CALLING
 		case MENU_D_LIST:
 			gIsDtmfContactValid = DTMF_GetContact((int)gSubMenuSelection - 1, Contact);
 			if (!gIsDtmfContactValid)
@@ -778,6 +787,7 @@ void UI_DisplayMenu(void)
 			else
 				memcpy(String, Contact, 8);
 			break;
+# endif
 #endif
 
 		case MENU_PONMSG:
@@ -934,7 +944,7 @@ void UI_DisplayMenu(void)
 	if ((UI_MENU_GetCurrentMenuId() == MENU_R_CTCS || UI_MENU_GetCurrentMenuId() == MENU_R_DCS) && gCssBackgroundScan)
 		UI_PrintString("SCAN", menu_item_x1, menu_item_x2, 4, 8);
 
-#ifdef ENABLE_DTMF_CALLING
+#if defined(ENABLE_DTMF) && defined(ENABLE_DTMF_CALLING)
 	if (UI_MENU_GetCurrentMenuId() == MENU_D_LIST && gIsDtmfContactValid) {
 		Contact[11] = 0;
 		memcpy(&gDTMF_ID, Contact + 8, 4);
@@ -947,7 +957,7 @@ void UI_DisplayMenu(void)
 	    UI_MENU_GetCurrentMenuId() == MENU_T_CTCS ||
 	    UI_MENU_GetCurrentMenuId() == MENU_R_DCS  ||
 	    UI_MENU_GetCurrentMenuId() == MENU_T_DCS
-#ifdef ENABLE_DTMF_CALLING
+#if defined(ENABLE_DTMF) && defined(ENABLE_DTMF_CALLING)
 	    || UI_MENU_GetCurrentMenuId() == MENU_D_LIST
 #endif
 	) {

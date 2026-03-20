@@ -30,7 +30,9 @@
 #include "version.h"
 
 #include "app/app.h"
+#ifdef ENABLE_DTMF
 #include "app/dtmf.h"
+#endif
 #include "bsp/dp32g030/gpio.h"
 #include "bsp/dp32g030/syscon.h"
 
@@ -85,8 +87,10 @@ void Main(void)
 
 	// Not implementing authentic device checks
 
+#ifdef ENABLE_DTMF
 	memset(gDTMF_String, '-', sizeof(gDTMF_String));
 	gDTMF_String[sizeof(gDTMF_String) - 1] = 0;
+#endif
 
 	BK4819_Init();
 

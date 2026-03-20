@@ -34,7 +34,9 @@
 #include "audio.h"
 #include "board.h"
 #include "driver/bk4819.h"
+#ifdef ENABLE_DTMF
 #include "dtmf.h"
+#endif
 #include "frequencies.h"
 #include "misc.h"
 #include "radio.h"
@@ -467,11 +469,16 @@ static void MAIN_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 	}
 
 	if (bKeyHeld && bKeyPressed) { // exit key held down
-		if (gInputBoxIndex > 0 || gDTMF_InputBox_Index > 0 || gDTMF_InputMode)
-		{	// cancel key input mode (channel/frequency entry)
+		if (gInputBoxIndex > 0
+#ifdef ENABLE_DTMF
+			|| gDTMF_InputBox_Index > 0 || gDTMF_InputMode
+#endif
+		) {	// cancel key input mode (channel/frequency entry)
+#ifdef ENABLE_DTMF
 			gDTMF_InputMode       = false;
 			gDTMF_InputBox_Index  = 0;
 			memset(gDTMF_String, 0, sizeof(gDTMF_String));
+#endif
 			gInputBoxIndex        = 0;
 			gRequestDisplayScreen = DISPLAY_MAIN;
 			gBeepToPlay           = BEEP_1KHZ_60MS_OPTIONAL;
@@ -505,7 +512,11 @@ static void MAIN_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 		return;
 	}
 
-	if (!bKeyPressed && !gDTMF_InputMode) { // menu key released
+	if (!bKeyPressed
+#ifdef ENABLE_DTMF
+		&& !gDTMF_InputMode
+#endif
+	) { // menu key released
 		const bool bFlag = !gInputBoxIndex;
 		gInputBoxIndex   = 0;
 
@@ -564,7 +575,9 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 			&& gScanRangeStart == 0
 #endif		
 		)
-		{	// start entering a DTMF string
+		{
+#ifdef ENABLE_DTMF
+			// start entering a DTMF string
 			gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 			memcpy(gDTMF_InputBox, gDTMF_String, MIN(sizeof(gDTMF_InputBox), sizeof(gDTMF_String) - 1));
 			gDTMF_InputBox_Index  = 0;
@@ -573,6 +586,9 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 			gKeyInputCountdown    = key_input_timeout_500ms;
 
 			gRequestDisplayScreen = DISPLAY_MAIN;
+#else
+			gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+#endif
 		}
 		else
 			gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
@@ -691,6 +707,7 @@ void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 	}
 #endif
 
+#ifdef ENABLE_DTMF
 	if (gDTMF_InputMode && bKeyPressed && !bKeyHeld) {
 		const char Character = DTMF_GetCharacter(Key);
 		if (Character != 0xFF)
@@ -703,6 +720,7 @@ void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 			return;
 		}
 	}
+#endif
 
 	// TODO: ???
 //	if (Key > KEY_PTT)
