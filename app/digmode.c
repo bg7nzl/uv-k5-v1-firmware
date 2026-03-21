@@ -14,6 +14,8 @@
  */
 
 #include "app/digmode.h"
+#include "app/chFrScanner.h"
+#include "app/scanner.h"
 #include "audio.h"
 #include "driver/bk4819.h"
 #include "driver/bk4819-regs.h"
@@ -26,6 +28,8 @@
 #include "settings.h"
 #include "misc.h"
 #include "ui/ui.h"
+
+#include <string.h>
 
 #if defined(ENABLE_UART)
 #include "driver/uart.h"
@@ -389,10 +393,80 @@ static bool ApplyDigmodeUartPower(uint8_t power_level)
 	return false;
 }
 
+static void ResetDigmodeRuntimeState(void)
+{
+    FifoClear();
+    ClearPreparedHop();
+
+    sTxReg30CachedValid = false;
+    sHeartbeatCountdown = 0;
+    sPrevApplyAt        = 0;
+    sLastDelta          = 170000;
+    sLastFreqDhz        = 0;
+    sConsecCrcFails     = 0;
+
+    sSchedCount         = 0;
+    sSchedPos           = 0;
+    sSchedInterval      = 0;
+    sSchedNextTime      = 0;
+    sSchedActive        = false;
+    sSchedWaiting       = false;
+    sSchedStartAt       = 0;
+    sSchedBaseFreq      = 0;
+    sSchedPower         = 0;
+}
+
+static void StopConflictingBackgroundWork(void)
+{
+    if (SCANNER_IsScanning())
+        SCANNER_Stop();
+
+    if (gScanStateDir != SCAN_OFF)
+    {
+        gScanKeepResult = false;
+        CHFRSCANNER_Stop();
+    }
+
+    gScheduleDualWatch     = false;
+    gDualWatchCountdown_10ms = 0;
+    gDualWatchActive       = false;
+    gRxVfoIsActive         = true;
+
+    gScheduleScanListen    = false;
+    gScanPauseDelayIn_10ms = 0;
+    gScanPauseMode         = false;
+
+#ifdef ENABLE_NOAA
+    gScheduleNOAA      = false;
+    gNOAA_Countdown_10ms = 0;
+    gIsNoaaMode        = false;
+#endif
+
+    /* SCANNER_Stop() queues a deferred VFO reload for normal RX mode.
+       Digimode takes over immediately, so clear that pending work now. */
+    gVfoConfigureMode  = VFO_CONFIGURE_NONE;
+    gFlagResetVfos     = false;
+    gFlagReconfigureVfos = false;
+
+    RADIO_SelectVfos();
+}
+
+static void ReloadNormalRadioState(void)
+{
+    RADIO_ConfigureChannel(0, VFO_CONFIGURE_RELOAD);
+    RADIO_ConfigureChannel(1, VFO_CONFIGURE_RELOAD);
+    RADIO_SelectVfos();
+    RADIO_SetupRegisters(true);
+}
+
 static void EnterDigmode(void)
 {
     if (!gDigmodeEntered)
     {
+        StopConflictingBackgroundWork();
+        ResetDigmodeRuntimeState();
+        memset(&gDigmodeDisplay, 0, sizeof(gDigmodeDisplay));
+
         gDigmodeEntered = true;
 
         /* Switch to USB RX with squelch disabled immediately.
@@ -521,6 +595,27 @@ static void DoStopTx(void)
     gUpdateDisplay = true;
 
     SendAck(DIGMODE_CMD_STOP_TX, DIGMODE_RESULT_OK);
+}
+
+void DIGMODE_Exit(void)
+{
+    if (!gDigmodeEntered)
+        return;
+
+    if (gDigmodeTxActive)
+        DoStopTx();
+
+    ResetDigmodeRuntimeState();
+    memset(&gDigmodeDisplay, 0, sizeof(gDigmodeDisplay));
+
+    gDigmodeEntered  = false;
+    gDigmodeTxActive = false;
+
+    ReloadNormalRadioState();
+
+    gRequestDisplayScreen = DISPLAY_MAIN;
+    gUpdateDisplay        = true;
+    gUpdateStatus         = true;
 }
 
 /* ------------------------------------------------------------------ */

@@ -85,4 +85,9 @@ uint16_t DIGMODE_ProcessByte(const uint8_t *buf, uint16_t available,
  */
 void DIGMODE_Poll(void);
 
+/*
+ * Leave digimode and restore the normal radio state.
+ */
+void DIGMODE_Exit(void);
+
 #endif

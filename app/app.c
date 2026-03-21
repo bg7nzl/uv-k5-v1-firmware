@@ -85,9 +85,11 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 #if defined(ENABLE_DIGMODE)
 static void DIGMODE_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
-	(void)Key;
-	(void)bKeyPressed;
-	(void)bKeyHeld;
+	if (Key == KEY_EXIT && bKeyPressed && !bKeyHeld)
+	{
+		AUDIO_PlayBeep(BEEP_1KHZ_60MS_OPTIONAL);
+		DIGMODE_Exit();
+	}
 }
 #endif
 
