@@ -54,7 +54,7 @@ jobs:
           overwrite: true
           release_name: release ${{ github.ref_name }}
 
-      - name: Auto release (packed .bin, single asset + English changelog)
+      - name: Auto release (packed .bin + CurrentReleaseNotes.md)
         if: ${{ success() && github.ref == 'refs/heads/main' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,57 +62,8 @@ jobs:
           set -euo pipefail
           SHORT="${GITHUB_SHA:0:7}"
           REPO="${{ github.repository }}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          # Same file as artifact: packed firmware, named bg7nzl-k5v1-<short>.bin (not raw firmware.bin)
           PACKED_ASSET="${{ steps.packed.outputs.file }}"
-
-          # /releases/latest returns 404 JSON when there is no release yet; do not treat that as a tag name
-          PREV=""
-          REL_JSON=$(gh api "repos/${REPO}/releases/latest" 2>/dev/null) || true
-          if [ -n "${REL_JSON}" ]; then
-            PREV=$(echo "${REL_JSON}" | jq -r 'if (.tag_name | type == "string") and (.tag_name | length > 0) then .tag_name else empty end' 2>/dev/null || true)
-          fi
-
-          NOTES_FILE=$(mktemp)
-          COMPARE_URL="${{ github.server_url }}/${REPO}/compare/${PREV}...${GITHUB_SHA}"
-          STATS_LINE=""
-          if [ -n "${PREV}" ]; then
-            CMP=$(gh api "repos/${REPO}/compare/${PREV}...${GITHUB_SHA}" 2>/dev/null) || true
-            if [ -n "${CMP}" ]; then
-              TC=$(echo "${CMP}" | jq -r '.total_commits // empty' 2>/dev/null || true)
-              FC=$(echo "${CMP}" | jq -r '.files | length' 2>/dev/null || true)
-              if [ -n "${TC}" ] && [ "${TC}" != "null" ]; then
-                STATS_LINE="Roughly **${TC}** commit(s) touched **${FC}** file path(s) since \`${PREV}\` (see compare link for detail)."
-              fi
-            fi
-          fi
-
-          {
-            echo "## Automated build (packed firmware)"
-            echo ""
-            echo "Download **\`bg7nzl-k5v1-${SHORT}.bin\`** — this is the **packed** image (from \`firmware.packed.bin\` / \`fw-pack.py\`), ready for normal flashing. It is attached as a **single release asset** (GitHub may still show default “Source code” archives below; that is normal)."
-            echo ""
-            echo "## What changed (summary)"
-            echo ""
-            if [ -z "${PREV}" ]; then
-              echo "This is the **first** automated CI firmware build from \`main\` at \`${SHORT}\`. It captures the current development tip as a flashable packed binary. Later auto-releases will describe progress **in prose** relative to the previous release, with a compare link for engineers who need the exact diff—**not** a raw commit list in the notes."
-            else
-              echo "This build is a **snapshot of \`main\`** at \`${SHORT}\`, produced after the last published GitHub release (\`${PREV}\`). Work on this firmware continues with merged improvements on the radio image (features, fixes, and maintenance) as integrated on \`main\`."
-              echo ""
-              if [ -n "${STATS_LINE}" ]; then
-                echo "${STATS_LINE}"
-                echo ""
-              fi
-              echo "These notes stay short on purpose. For the **full patch history**, open:"
-              echo ""
-              echo "- **[Compare \`${PREV}\` → \`${SHORT}\`](${COMPARE_URL})**"
-              echo ""
-              echo "For a **hand-written, user-facing changelog** in plain English, edit this release or add one in the repo (CI does not run an LLM here)."
-            fi
-            echo ""
-            echo "---"
-            echo "*Workflow [#${{ github.run_number }}](${RUN_URL}) · commit \`${SHORT}\`*"
-          } > "${NOTES_FILE}"
+          test -f CurrentReleaseNotes.md
 
           TAG="auto-${SHORT}"
           if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
@@ -123,5 +74,5 @@ jobs:
           gh release create "${TAG}" "${PACKED_ASSET}" \
             --repo "${REPO}" \
             --title "Build ${SHORT} (packed firmware)" \
-            --notes-file "${NOTES_FILE}" \
+            --notes-file CurrentReleaseNotes.md \
             --target "${GITHUB_SHA}"

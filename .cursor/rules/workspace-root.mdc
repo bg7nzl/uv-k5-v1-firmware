@@ -18,8 +18,12 @@ alwaysApply: true
    - 用户说 **GitHub** / **Actions** / **action**（及「CI」若明显指 GitHub）：一律理解为 **远端编译**——以本仓库 **GitHub Actions**（`.github/workflows/`）为准，通过 push / 运行 workflow 在 GitHub 上构建与出 artifact。
 6. **GitHub Actions 与自动 Release（约定 + 已实现于 workflow）**：
    - 当 **`main` 上 workflow 构建成功** 时，由 `.github/workflows/main.yml` **自动** 创建/刷新一个 GitHub Release：标签形如 `auto-<7位短SHA>`。Release 上 **只挂一个 `.bin` 资产**（用户口语「裸 bin」指 **不再套一层 zip/artifact 包**，直接下 `.bin`），其 **内容仍是 packed**（与 `firmware.packed.bin` / `fw-pack.py` 一致），文件名为 **`bg7nzl-k5v1-<短SHA>.bin`**（与 Artifact 里那份同名文件同源）。
-   - Release **说明正文为英文**：用 **简短叙述**（说明这是 `main` 上某提交的 packed 快照、相对上一版 release 的概括），并附 **GitHub compare 链接** 供查完整 diff；**不要**在说明里堆 `git log` 式 commit 列表。若需要更像「产品说明」的英文段落，由维护者 **编辑该 Release** 或在对话里让 **助手**根据 diff/变更写一版再贴回（CI 不调用 LLM）。手动打的 **`v*` tag** 仍走原有逻辑，与上述自动 release 并存。
-   - 修改此行为时只改 workflow 与文档，避免与「Docker = 本地」用语混淆。
+   - **Release 正文**来自仓库根目录 **[`CurrentReleaseNotes.md`](CurrentReleaseNotes.md)**（英文 **叙述性说明**，**不要**写成 raw `git log` 列表）。CI **只读取该文件**，不在 workflow 里拼长文。手动打的 **`v*` tag** 仍走原有逻辑，与上述自动 release 并存。
+7. **每次 `commit` 且 `push` 到 `main` 之前（助手必做）**：
+   1. 用 GitHub API 查询 **`releases/latest`** 的 **`target_commitish`**（上一版 release 对应的 commit SHA）。
+   2. 若成功：根据 **`git log <该SHA>..HEAD`**、**`git diff <该SHA>..HEAD --stat`**（及必要时的文件 diff）用 **英文** 写 **概括性更新说明**，**覆盖写入** [`CurrentReleaseNotes.md`](CurrentReleaseNotes.md)，并把该文件 **纳入本次暂存区**。
+   3. 若查询失败（404、无网络等）：则根据 **本地尚未 push 的提交**（**`git log origin/main..HEAD`**）以及 **已暂存未提交变更**（**`git diff --cached --stat`**）用英文写说明并覆盖 `CurrentReleaseNotes.md`（涵盖所有因未 push 而未触发过 Action 的累积变更），并纳入暂存区。
+   - 然后再执行 `git commit` / `git push`（与用户约定一致时）。
 
 ## 使用方式（给人看的）
 
