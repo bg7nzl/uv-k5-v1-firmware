@@ -1,49 +1,127 @@
 on:
   push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container:
-      image: archlinux:latest
     steps:
-      - name: base-devel
-        run:  pacman -Syyu base-devel --noconfirm
-      - name: arm-none-eabi-gcc
-        run:  pacman -Syyu arm-none-eabi-gcc --noconfirm
-      - name: arm-none-eabi-newlib
-        run:  pacman -Syyu arm-none-eabi-newlib --noconfirm
-      - name: git
-        run:  pacman -Syyu git --noconfirm
-      - name: python-pip
-        run:  pacman -Syyu python-pip --noconfirm
-      - name: python-crcmod
-        run:  pacman -Syyu python-crcmod --noconfirm      
-
       - name: Checkout
-        uses: actions/checkout@v3
-        
-      - name: safe.directory
-        run:  git config --global --add safe.directory /__w/uv-k5-firmware-custom/uv-k5-firmware-custom        
-      - name: Make
-        run:  make
-      - name: size
-        run:  arm-none-eabi-size firmware
-
-      - name: 'Upload Artifact'
-        uses: actions/upload-artifact@v3
+        uses: actions/checkout@v4
         with:
-          name: firmware
-          path: firmware*.bin
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build firmware (Docker)
+        run: |
+          docker build -t uvk5 .
+          mkdir -p compiled-firmware
+          docker run --rm -v "$PWD/compiled-firmware:/app/compiled-firmware" uvk5 \
+            /bin/bash -c "cd /app && make && cp firmware* compiled-firmware/"
+
+      - name: Firmware size
+        run: |
+          docker run --rm -v "$PWD/compiled-firmware:/out" uvk5 \
+            arm-none-eabi-size /out/firmware
+
+      - name: Stage packed firmware (single file for artifact)
+        id: packed
+        run: |
+          short="${GITHUB_SHA:0:7}"
+          dest="compiled-firmware/bg7nzl-k5v1-${short}.bin"
+          cp compiled-firmware/firmware.packed.bin "$dest"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "file=$dest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bg7nzl-k5v1-${{ steps.packed.outputs.short }}
+          path: ${{ steps.packed.outputs.file }}
+          compression-level: 0
 
       - name: Upload binaries to release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: firmware.packed.bin
+          file: compiled-firmware/firmware.packed.bin
           asset_name: egzumer_$tag.packed.bin
           tag: ${{ github.ref }}
           overwrite: true
-          release_name: release ${{ github.ref_name }}     
-   
+          release_name: release ${{ github.ref_name }}
+
+      - name: Auto release (packed .bin, single asset + English changelog)
+        if: ${{ success() && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHORT="${GITHUB_SHA:0:7}"
+          REPO="${{ github.repository }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Same file as artifact: packed firmware, named bg7nzl-k5v1-<short>.bin (not raw firmware.bin)
+          PACKED_ASSET="${{ steps.packed.outputs.file }}"
+
+          # /releases/latest returns 404 JSON when there is no release yet; do not treat that as a tag name
+          PREV=""
+          REL_JSON=$(gh api "repos/${REPO}/releases/latest" 2>/dev/null) || true
+          if [ -n "${REL_JSON}" ]; then
+            PREV=$(echo "${REL_JSON}" | jq -r 'if (.tag_name | type == "string") and (.tag_name | length > 0) then .tag_name else empty end' 2>/dev/null || true)
+          fi
+
+          NOTES_FILE=$(mktemp)
+          COMPARE_URL="${{ github.server_url }}/${REPO}/compare/${PREV}...${GITHUB_SHA}"
+          STATS_LINE=""
+          if [ -n "${PREV}" ]; then
+            CMP=$(gh api "repos/${REPO}/compare/${PREV}...${GITHUB_SHA}" 2>/dev/null) || true
+            if [ -n "${CMP}" ]; then
+              TC=$(echo "${CMP}" | jq -r '.total_commits // empty' 2>/dev/null || true)
+              FC=$(echo "${CMP}" | jq -r '.files | length' 2>/dev/null || true)
+              if [ -n "${TC}" ] && [ "${TC}" != "null" ]; then
+                STATS_LINE="Roughly **${TC}** commit(s) touched **${FC}** file path(s) since \`${PREV}\` (see compare link for detail)."
+              fi
+            fi
+          fi
+
+          {
+            echo "## Automated build (packed firmware)"
+            echo ""
+            echo "Download **\`bg7nzl-k5v1-${SHORT}.bin\`** — this is the **packed** image (from \`firmware.packed.bin\` / \`fw-pack.py\`), ready for normal flashing. It is attached as a **single release asset** (GitHub may still show default “Source code” archives below; that is normal)."
+            echo ""
+            echo "## What changed (summary)"
+            echo ""
+            if [ -z "${PREV}" ]; then
+              echo "This is the **first** automated CI firmware build from \`main\` at \`${SHORT}\`. It captures the current development tip as a flashable packed binary. Later auto-releases will describe progress **in prose** relative to the previous release, with a compare link for engineers who need the exact diff—**not** a raw commit list in the notes."
+            else
+              echo "This build is a **snapshot of \`main\`** at \`${SHORT}\`, produced after the last published GitHub release (\`${PREV}\`). Work on this firmware continues with merged improvements on the radio image (features, fixes, and maintenance) as integrated on \`main\`."
+              echo ""
+              if [ -n "${STATS_LINE}" ]; then
+                echo "${STATS_LINE}"
+                echo ""
+              fi
+              echo "These notes stay short on purpose. For the **full patch history**, open:"
+              echo ""
+              echo "- **[Compare \`${PREV}\` → \`${SHORT}\`](${COMPARE_URL})**"
+              echo ""
+              echo "For a **hand-written, user-facing changelog** in plain English, edit this release or add one in the repo (CI does not run an LLM here)."
+            fi
+            echo ""
+            echo "---"
+            echo "*Workflow [#${{ github.run_number }}](${RUN_URL}) · commit \`${SHORT}\`*"
+          } > "${NOTES_FILE}"
+
+          TAG="auto-${SHORT}"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --repo "${REPO}" --yes
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" ":refs/tags/${TAG}" || true
+          fi
+
+          gh release create "${TAG}" "${PACKED_ASSET}" \
+            --repo "${REPO}" \
+            --title "Build ${SHORT} (packed firmware)" \
+            --notes-file "${NOTES_FILE}" \
+            --target "${GITHUB_SHA}"
