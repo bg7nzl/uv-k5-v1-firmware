@@ -19,11 +19,15 @@ alwaysApply: true
 6. **GitHub Actions 与自动 Release（约定 + 已实现于 workflow）**：
    - 当 **`main` 上 workflow 构建成功** 时，由 `.github/workflows/main.yml` **自动** 创建/刷新一个 GitHub Release：标签形如 `auto-<7位短SHA>`。Release 上 **只挂一个 `.bin` 资产**（用户口语「裸 bin」指 **不再套一层 zip/artifact 包**，直接下 `.bin`），其 **内容仍是 packed**（与 `firmware.packed.bin` / `fw-pack.py` 一致），文件名为 **`bg7nzl-k5v1-<短SHA>.bin`**（与 Artifact 里那份同名文件同源）。
    - **Release 正文**来自仓库根目录 **[`CurrentReleaseNotes.md`](CurrentReleaseNotes.md)**（英文 **叙述性说明**，**不要**写成 raw `git log` 列表）。CI **只读取该文件**，不在 workflow 里拼长文。手动打的 **`v*` tag** 仍走原有逻辑，与上述自动 release 并存。
-7. **每次 `commit` 且 `push` 到 `main` 之前（助手必做）**：
+7. **在 `push` 到 `main` 之前（助手必做；与仅 commit 区分）**：
    1. 用 GitHub API 查询 **`releases/latest`** 的 **`target_commitish`**（上一版 release 对应的 commit SHA）。
    2. 若成功：根据 **`git log <该SHA>..HEAD`**、**`git diff <该SHA>..HEAD --stat`**（及必要时的文件 diff）用 **英文** 写 **概括性更新说明**，**覆盖写入** [`CurrentReleaseNotes.md`](CurrentReleaseNotes.md)，并把该文件 **纳入本次暂存区**。
    3. 若查询失败（404、无网络等）：则根据 **本地尚未 push 的提交**（**`git log origin/main..HEAD`**）以及 **已暂存未提交变更**（**`git diff --cached --stat`**）用英文写说明并覆盖 `CurrentReleaseNotes.md`（涵盖所有因未 push 而未触发过 Action 的累积变更），并纳入暂存区。
-   - 然后再执行 `git commit` / `git push`（与用户约定一致时）。
+   - 若用户 **仅要求本地 commit**（见第 8 条），**不必** 在本轮更新 `CurrentReleaseNotes.md`；待用户 **随后明确要求 push** 时，再按本条 **完整执行**（更新说明 → add → commit 若尚有未提交改动 → push）。
+   - **仅当**用户在本轮对话中 **明确要求 `push` /「推上去」/「提交并推送」** 等时，再执行 `git push`（亦见第 8 条）。
+8. **`commit` 与 `push` 分离（默认不自动 push）**：
+   - 用户 **只说** `commit` /「提交」/「git commit」等而 **未** 提到 push 时：助手 **只** 做本地 `git commit`（及必要的 `git add`），**不得** 自动执行 `git push`，以免每次 push 都触发 GitHub Actions 与 **`auto-*` Release** 过于零碎。
+   - **只有**用户 **明确** 要求 push（例如「push」「推送」「推上去」「commit 并 push」）时，才执行 `git push`。
 
 ## 使用方式（给人看的）
 
