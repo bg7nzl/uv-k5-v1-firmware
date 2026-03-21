@@ -49,6 +49,29 @@ static uint16_t sBase3B;         // REG_3B baseline
 static uint32_t sAlphaMhz;       // Vernier alpha (mHz/LSB)
 static uint8_t  sPaBias;
 
+#define VERNIER_FINE_STEPS  100
+#define VERNIER_VALID_BYTES ((VERNIER_FINE_STEPS + 7) / 8)
+#define DIGMODE_POLL_WINDOW_US 10000U
+#define DIGMODE_TX_PREP_GUARD_US 35000U
+
+typedef struct {
+    uint16_t xtal_trim;
+    uint16_t pll_comp;
+} VernierEntry_t;
+
+typedef struct {
+    bool     valid;
+    uint16_t freq_dhz;
+    uint32_t pll_freq;
+    uint16_t reg3b;
+} PreparedHop_t;
+
+static VernierEntry_t sVernierTable[VERNIER_FINE_STEPS];
+static uint8_t        sVernierValid[VERNIER_VALID_BYTES];
+static PreparedHop_t  sPreparedHop;
+static uint16_t       sTxReg30Cached;
+static bool           sTxReg30CachedValid;
+
 /* Heartbeat watchdog — counts down in 10ms ticks */
 static uint16_t sHeartbeatCountdown;
 
@@ -209,34 +232,102 @@ static bool MajorityVote(const uint16_t freqs[DIGMODE_FREQ_COPIES],
 /*  Vernier frequency application                                      */
 /* ------------------------------------------------------------------ */
 
-static void ApplyFreq(uint16_t freq_dhz)
+static void InvalidateVernierTable(void)
 {
-    sLastFreqDhz = freq_dhz;
+    for (uint8_t i = 0; i < VERNIER_VALID_BYTES; i++)
+        sVernierValid[i] = 0;
+}
 
+static bool IsVernierValid(uint16_t fine_dhz)
+{
+    return (sVernierValid[fine_dhz >> 3] & (uint8_t)(1U << (fine_dhz & 7))) != 0;
+}
+
+static void MarkVernierValid(uint16_t fine_dhz)
+{
+    sVernierValid[fine_dhz >> 3] |= (uint8_t)(1U << (fine_dhz & 7));
+}
+
+static void EnsureVernierAlpha(uint32_t base_freq_10hz)
+{
+    uint32_t alpha_mhz = VERNIER_ComputeAlpha(base_freq_10hz * 10);
+    if (alpha_mhz != sAlphaMhz)
+    {
+        sAlphaMhz = alpha_mhz;
+        InvalidateVernierTable();
+    }
+}
+
+static VernierEntry_t GetVernierEntry(uint32_t base_freq_10hz, uint16_t fine_dhz)
+{
+    EnsureVernierAlpha(base_freq_10hz);
+
+    if (!IsVernierValid(fine_dhz))
+    {
+        VernierResult_t v = VERNIER_Solve((int32_t)fine_dhz * 100, sAlphaMhz);
+        sVernierTable[fine_dhz].xtal_trim = v.xtal_trim;
+        sVernierTable[fine_dhz].pll_comp  = v.pll_comp;
+        MarkVernierValid(fine_dhz);
+    }
+
+    return sVernierTable[fine_dhz];
+}
+
+static void ClearPreparedHop(void)
+{
+    sPreparedHop.valid = false;
+}
+
+static PreparedHop_t PrepareHop(uint16_t freq_dhz)
+{
+    PreparedHop_t hop;
     uint16_t coarse_steps = freq_dhz / 100;
     uint16_t fine_dhz     = freq_dhz % 100;
-    int32_t  fine_mhz     = (int32_t)fine_dhz * 100;
+    VernierEntry_t v      = GetVernierEntry(sBaseFreq, fine_dhz);
 
-    VernierResult_t v = VERNIER_Solve(fine_mhz, sAlphaMhz);
+    hop.valid    = true;
+    hop.freq_dhz = freq_dhz;
+    hop.pll_freq = sBaseFreq + coarse_steps - v.pll_comp;
+    hop.reg3b    = sBase3B - v.xtal_trim;
 
-    uint32_t pll_freq = sBaseFreq + coarse_steps - v.pll_comp;
-    BK4819_SetFrequency(pll_freq);
+    return hop;
+}
 
-    uint16_t reg3b = sBase3B - v.xtal_trim;
-    BK4819_WriteRegister(BK4819_REG_3B, reg3b);
+static void StagePreparedHop(const PreparedHop_t *hop)
+{
+    BK4819_SetFrequency(hop->pll_freq);
+    BK4819_WriteRegister(BK4819_REG_3B, hop->reg3b);
+    sPreparedHop = *hop;
+}
 
-    /* Toggle REG_30 to trigger VCO re-calibration — without this
-       the PLL ignores the new frequency in REG_38/39 */
-    uint16_t reg30 = BK4819_ReadRegister(BK4819_REG_30);
+static void StageFreq(uint16_t freq_dhz)
+{
+    PreparedHop_t hop = PrepareHop(freq_dhz);
+    StagePreparedHop(&hop);
+}
+
+static void CacheTxReg30(void)
+{
+    sTxReg30Cached      = BK4819_ReadRegister(BK4819_REG_30);
+    sTxReg30CachedValid = true;
+}
+
+static void CommitPreparedHop(void)
+{
+    if (!sPreparedHop.valid || !sTxReg30CachedValid)
+        return;
+
+    sLastFreqDhz = sPreparedHop.freq_dhz;
+
     BK4819_WriteRegister(BK4819_REG_30, 0);
-    BK4819_WriteRegister(BK4819_REG_30, reg30);
+    BK4819_WriteRegister(BK4819_REG_30, sTxReg30Cached);
 
-    /* Update display state */
-    gDigmodeDisplay.cur_audio_dhz = freq_dhz;
-    gDigmodeDisplay.cur_rf_freq   = pll_freq;
+    gDigmodeDisplay.cur_audio_dhz = sPreparedHop.freq_dhz;
+    gDigmodeDisplay.cur_rf_freq   = sPreparedHop.pll_freq;
     gDigmodeDisplay.tx_active     = gDigmodeTxActive;
-    gDigmodeDisplay.fifo_depth    = sFifoCount;
     gUpdateDisplay = true;
+
+    ClearPreparedHop();
 }
 
 static inline void HeartbeatReset(void)
@@ -332,9 +423,10 @@ static void DoStartTx(uint32_t base_freq_10hz, uint8_t power_level)
     if (gDigmodeTxActive)
         return;
 
+    ClearPreparedHop();
+    sTxReg30CachedValid = false;
     sBase3B   = 22656 + gEeprom.BK4819_XTAL_FREQ_LOW;
     sBaseFreq = base_freq_10hz;
-    sAlphaMhz = VERNIER_ComputeAlpha(sBaseFreq * 10);
 
     gCurrentVfo->pTX->Frequency = sBaseFreq;
     if (ApplyDigmodeUartPower(power_level))
@@ -381,6 +473,7 @@ static void DoStartTx(uint32_t base_freq_10hz, uint8_t power_level)
     BK4819_WriteRegister(BK4819_REG_7D, 0xE940);
 
     gDigmodeTxActive = true;
+    CacheTxReg30();
 
     gDigmodeDisplay.base_freq  = sBaseFreq;
     gDigmodeDisplay.tx_active  = true;
@@ -396,6 +489,8 @@ static void DoStopTx(void)
 
     gDigmodeTxActive = false;
     FifoClear();
+    ClearPreparedHop();
+    sTxReg30CachedValid = false;
 
     /* Use the CW end-of-transmission cleanup */
     BK4819_WriteRegister(BK4819_REG_70, 0x0000);
@@ -480,6 +575,9 @@ static void HandleSetFreq(const uint8_t *buf, uint16_t buf_size,
         return;
 
     FifoPush(freq_dhz, apply_at);
+
+    if (!sPreparedHop.valid && sFifoCount == 1)
+        StageFreq(freq_dhz);
 }
 
 /* ------------------------------------------------------------------ */
@@ -492,8 +590,11 @@ static void SchedBeginTx(void)
 
     if (sSchedCount > 0)
     {
-        ApplyFreq(sSchedBuf[0]);
+        StageFreq(sSchedBuf[0]);
+        CommitPreparedHop();
         sSchedPos = 1;
+        if (sSchedPos < sSchedCount)
+            StageFreq(sSchedBuf[sSchedPos]);
     }
 
     sSchedNextTime = SCHEDULER_GetMicros() + sSchedInterval;
@@ -524,6 +625,7 @@ static void HandleSchedTx(const uint8_t *buf, uint16_t buf_size,
         DoStopTx();
     sSchedActive  = false;
     sSchedWaiting = false;
+    ClearPreparedHop();
 
     EnterDigmode();
 
@@ -710,16 +812,50 @@ void DIGMODE_Poll(void)
     {
         uint32_t now = SCHEDULER_GetMicros();
         int32_t diff = (int32_t)(sSchedStartAt - now);
-        if (diff <= 0)
+
+        if (!gDigmodeTxActive)
         {
-            SchedBeginTx();
+            if (diff > (int32_t)(DIGMODE_TX_PREP_GUARD_US + DIGMODE_POLL_WINDOW_US))
+            {
+                gDigmodeDisplay.countdown_ms = (uint32_t)diff / 1000;
+                gUpdateDisplay = true;
+                return;
+            }
+
+            if (diff > (int32_t)DIGMODE_TX_PREP_GUARD_US)
+            {
+                SYSTICK_DelayUs((uint32_t)(diff - (int32_t)DIGMODE_TX_PREP_GUARD_US));
+                now = SCHEDULER_GetMicros();
+                diff = (int32_t)(sSchedStartAt - now);
+            }
+
+            DoStartTx(sSchedBaseFreq, sSchedPower);
+            if (sSchedCount > 0)
+                StageFreq(sSchedBuf[0]);
+
+            now = SCHEDULER_GetMicros();
+            diff = (int32_t)(sSchedStartAt - now);
         }
-        else
+
+        if (diff > (int32_t)DIGMODE_POLL_WINDOW_US)
         {
             gDigmodeDisplay.countdown_ms = (uint32_t)diff / 1000;
             gUpdateDisplay = true;
+            return;
         }
-        return;
+
+        if (diff > 0)
+            SYSTICK_DelayUs((uint32_t)diff);
+
+        CommitPreparedHop();
+        sSchedPos      = 1;
+        sSchedNextTime = sSchedStartAt + sSchedInterval;
+        sSchedActive   = true;
+        sSchedWaiting  = false;
+        gDigmodeDisplay.sched_waiting = false;
+
+        if (sSchedPos < sSchedCount)
+            StageFreq(sSchedBuf[sSchedPos]);
     }
 
     if (!gDigmodeTxActive)
@@ -729,21 +865,28 @@ void DIGMODE_Poll(void)
     if (sSchedActive)
     {
         uint32_t now = SCHEDULER_GetMicros();
-        while (sSchedPos < sSchedCount)
+        while (1)
         {
+            if (!sPreparedHop.valid)
+            {
+                if (sSchedPos >= sSchedCount)
+                    break;
+                StageFreq(sSchedBuf[sSchedPos]);
+            }
+
             int32_t diff = (int32_t)(sSchedNextTime - now);
-            if (diff > 10000)
+            if (diff > (int32_t)DIGMODE_POLL_WINDOW_US)
                 break;          /* next step >10ms away, wait */
             if (diff > 0)
                 SYSTICK_DelayUs((uint32_t)diff);
 
-            ApplyFreq(sSchedBuf[sSchedPos]);
+            CommitPreparedHop();
             sSchedPos++;
             sSchedNextTime += sSchedInterval;
             now = SCHEDULER_GetMicros();
         }
 
-        if (sSchedPos >= sSchedCount)
+        if (sSchedPos >= sSchedCount && !sPreparedHop.valid)
         {
             sSchedActive = false;
             DoStopTx();
@@ -757,18 +900,20 @@ void DIGMODE_Poll(void)
     FreqEntry_t entry;
     while (FifoPeek(&entry))
     {
+        if (!sPreparedHop.valid)
+            StageFreq(entry.freq_dhz);
+
         uint32_t now = SCHEDULER_GetMicros();
         int32_t  diff = (int32_t)(entry.apply_at_us - now);
 
-        if (diff > 10000)
+        if (diff > (int32_t)DIGMODE_POLL_WINDOW_US)
             break;
-
-        FifoPop();
 
         if (diff > 0)
             SYSTICK_DelayUs((uint32_t)diff);
 
-        ApplyFreq(entry.freq_dhz);
+        CommitPreparedHop();
+        FifoPop();
     }
 
     gDigmodeDisplay.fifo_depth = sFifoCount;

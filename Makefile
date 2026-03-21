@@ -46,9 +46,8 @@ ENABLE_REDUCE_LOW_MID_TX_POWER?= 0
 ENABLE_BYP_RAW_DEMODULATORS   ?= 0
 ENABLE_BLMIN_TMP_OFF          ?= 0
 ENABLE_SCAN_RANGES            ?= 1
-
 # UART digital modes (FT8 etc.); requires ENABLE_UART=1
-ENABLE_DIGMODE                ?= 0
+ENABLE_DIGMODE                ?= 1
 
 ifeq ($(ENABLE_DIGMODE),1)
 ifneq ($(ENABLE_UART),1)
