@@ -7,18 +7,9 @@
 
 ## What’s new since the previous auto-release
 
-This update is mainly focused on making **Digimode exit cleanly without a reboot** and tightening the matching workflow guidance around local vs remote builds.
-
 ### Firmware & UX
 
-- **Digimode exit control** — a **short press of `EXIT`** on the Digimode screen now leaves Digimode and returns the radio to normal operation instead of requiring a reboot.
-- **Safer Digimode entry** — entering Digimode now actively stops conflicting background activity such as scanning, dual watch, and NOAA auto-scanning so the digital-mode state does not inherit unstable runtime context.
-- **Safer Digimode teardown** — exit logic now clears Digimode runtime scheduling/TX state and reloads the normal VFO/radio configuration before returning to the main screen.
-
-### Workflow notes
-
-- **Push discipline** — project guidance now keeps commit-only actions local and defers release-note refresh/push-triggered CI behaviour until an explicit `push`.
-- **Build wording** — plain “build/compile” requests are documented as meaning the local Docker build path unless GitHub Actions is explicitly requested.
+- **FM radio tuning** — **short presses** on **UP** and **DOWN** now advance the FM frequency by one step (same as hold-to-repeat), instead of only responding after a long press. Release after a held repeat still does not add an extra step.
 
 ---
 

@@ -1,5 +1,5 @@
 /* Copyright 2023 Dual Tachyon
- * Minimal FM: fixed 64.0–108.0 MHz (640–1080 × 0.1 MHz), UP/DOWN hold = step,
+ * Minimal FM: fixed 64.0–108.0 MHz (640–1080 × 0.1 MHz), UP/DOWN short or hold = step,
  * EXIT = leave. BK1080 band auto: <76 MHz → band 3, else → band 1.
  * Enter FM via F+0 only (side key ACTION_OPT_FM is NOP).
  */
@@ -149,9 +149,10 @@ static void Key_UP_DOWN(uint8_t state, int8_t step)
 		gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 		return;
 	}
-	if (state != BUTTON_EVENT_HELD)
-		return;
-	fm_step_frequency(step);
+	/* Short press ends as (pressed=0, held=0) → SHORT; hold repeat uses HELD.
+	 * Release after hold is (0,1) → state 2, ignored here (already stepped on HELD). */
+	if (state == BUTTON_EVENT_HELD || state == BUTTON_EVENT_SHORT)
+		fm_step_frequency(step);
 }
 
 static void Key_EXIT(uint8_t state)
