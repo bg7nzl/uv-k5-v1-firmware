@@ -23,7 +23,7 @@ ifeq ($(ENABLE_DTMF),0)
 endif
 
 # ---- CUSTOM MODS ----
-ENABLE_BIG_FREQ               ?= 1
+ENABLE_BIG_FREQ               ?= 0
 ENABLE_SMALL_BOLD             ?= 1
 ENABLE_CUSTOM_MENU_LAYOUT     ?= 1
 ENABLE_KEEP_MEM_NAME          ?= 1
@@ -52,6 +52,15 @@ ENABLE_DIGMODE                ?= 1
 ifeq ($(ENABLE_DIGMODE),1)
 ifneq ($(ENABLE_UART),1)
 $(error ENABLE_DIGMODE=1 requires ENABLE_UART=1)
+endif
+endif
+
+# CAT remote control (PC serial); requires ENABLE_UART=1
+ENABLE_CATMODE                ?= 1
+
+ifeq ($(ENABLE_CATMODE),1)
+ifneq ($(ENABLE_UART),1)
+$(error ENABLE_CATMODE=1 requires ENABLE_UART=1)
 endif
 endif
 
@@ -152,6 +161,10 @@ ifeq ($(ENABLE_DIGMODE),1)
 	OBJS += app/digmode.o
 	OBJS += ui/digmode.o
 	OBJS += dsp/vernier.o
+endif
+ifeq ($(ENABLE_CATMODE),1)
+	OBJS += app/catmode.o
+	OBJS += ui/catmode.o
 endif
 ifeq ($(ENABLE_AM_FIX), 1)
 	OBJS += am_fix.o
@@ -293,6 +306,9 @@ endif
 ifeq ($(ENABLE_DIGMODE),1)
 	CFLAGS += -DENABLE_DIGMODE
 endif
+ifeq ($(ENABLE_CATMODE),1)
+	CFLAGS += -DENABLE_CATMODE
+endif
 ifeq ($(ENABLE_BIG_FREQ),1)
 	CFLAGS  += -DENABLE_BIG_FREQ
 endif
@@ -406,7 +422,7 @@ ifeq ($(ENABLE_CUSTOM_MENU_LAYOUT),1)
 endif
 
 LDFLAGS =
-LDFLAGS += -z noexecstack -mcpu=cortex-m0 -nostartfiles -Wl,-T,firmware.ld -Wl,--gc-sections
+LDFLAGS += -z noexecstack -mcpu=cortex-m0 -nostartfiles -Wl,-T,firmware.ld -Wl,--gc-sections -Wl,--relax
 
 # Use newlib-nano instead of newlib
 LDFLAGS += --specs=nano.specs
