@@ -16,6 +16,7 @@ alwaysApply: true
 5. **用语与编译场景（用户口头指令）**：
    - 用户说 **Docker** / **docker**：一律理解为 **本地编译**——在用户本机用 Docker（如 `compile-with-docker.sh`、`Dockerfile`），**不要**当成「在 Cursor/云端代跑 Docker」除非用户明确要助手在其环境执行。
    - 用户说 **GitHub** / **Actions** / **action**（及「CI」若明显指 GitHub）：一律理解为 **远端编译**——以本仓库 **GitHub Actions**（`.github/workflows/`）为准，通过 push / 运行 workflow 在 GitHub 上构建与出 artifact。
+   - 用户只说 **编译** / **build** 等而 **未** 指明 Docker 或 Actions/远端 CI 时：**一律按本地 Docker 编译**理解（与上条「Docker」同义）；**不要**默认当成推上去跑 GitHub Actions。
 6. **GitHub Actions 与自动 Release（约定 + 已实现于 workflow）**：
    - 当 **`main` 上 workflow 构建成功** 时，由 `.github/workflows/main.yml` **自动** 创建/刷新一个 GitHub Release：标签形如 `auto-<7位短SHA>`。Release 上 **只挂一个 `.bin` 资产**（用户口语「裸 bin」指 **不再套一层 zip/artifact 包**，直接下 `.bin`），其 **内容仍是 packed**（与 `firmware.packed.bin` / `fw-pack.py` 一致），文件名为 **`bg7nzl-k5v1-<短SHA>.bin`**（与 Artifact 里那份同名文件同源）。
    - **Release 正文**来自仓库根目录 **[`CurrentReleaseNotes.md`](CurrentReleaseNotes.md)**（英文 **叙述性说明**，**不要**写成 raw `git log` 列表）。CI **只读取该文件**，不在 workflow 里拼长文。手动打的 **`v*` tag** 仍走原有逻辑，与上述自动 release 并存。

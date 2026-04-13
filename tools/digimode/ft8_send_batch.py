@@ -17,11 +17,60 @@ import time
 import serial
 
 
-def find_aioc_port():
-    """Auto-detect AIOC serial port via /dev/serial/by-id/."""
+def _is_bluetooth_port(p):
+    d = ((getattr(p, 'description', None) or '') + ' ' + (getattr(p, 'hwid', None) or '')).lower()
+    return 'bluetooth' in d
+
+
+def find_default_serial_port():
+    """Pick serial device: AIOC by-id first, else first non-Bluetooth USB serial, else any.
+
+    Returns (device_path, tag) on success; (None, error_message) on failure.
+    """
     for link in glob.glob('/dev/serial/by-id/*AIOC*'):
-        return os.path.realpath(link)
-    return None
+        return os.path.realpath(link), 'AIOC (by-id)'
+
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return None, 'serial.tools.list_ports unavailable'
+
+    ports = [p for p in list_ports.comports() if p.device]
+    if not ports:
+        return None, 'no serial ports found'
+
+    usb = [p for p in ports if p.vid is not None and not _is_bluetooth_port(p)]
+    if usb:
+        p = usb[0]
+        label = (p.description or p.manufacturer or p.hwid or 'USB serial').strip()
+        return p.device, label
+
+    other = [p for p in ports if not _is_bluetooth_port(p)]
+    if other:
+        p = other[0]
+        return p.device, (p.description or p.hwid or 'serial').strip()
+
+    return None, 'only Bluetooth serial ports found'
+
+
+def print_serial_ports():
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        print('[ft8] ERROR: serial.tools.list_ports unavailable')
+        sys.exit(1)
+    rows = list(list_ports.comports())
+    if not rows:
+        print('[ft8] No serial ports found.')
+        return
+    print('[ft8] Serial ports:')
+    for p in rows:
+        vidpid = ''
+        if p.vid is not None and p.pid is not None:
+            vidpid = f' {p.vid:04x}:{p.pid:04x}'
+        print(f'  {p.device}{vidpid}  {p.description or ""}')
+        if p.hwid:
+            print(f'      {p.hwid}')
 
 # ---- UART Protocol (inlined) ----
 
@@ -77,7 +126,7 @@ FT8_SYMBOL_US  = 160_000          # 160 ms per symbol
 FT8_TONE_STEP  = 6.25             # Hz between tones
 BASE_AUDIO_HZ  = 1500.0
 BASE_FREQ_MHZ  = 144.174
-BASE_FREQ_10HZ = round(BASE_FREQ_MHZ * 100_000)  # 14417400
+BASE_FREQ_10HZ = round(BASE_FREQ_MHZ * 100_000)  # 5031300
 
 SYMBOLS = [
     3,1,4,0,6,5,2,0,0,0,0,0,0,0,0,1,0,6,6,0,4,5,2,1,0,6,1,5,4,7,4,4,
@@ -146,8 +195,10 @@ POWER_NAMES = ['USER', 'LOW1', 'LOW2', 'LOW3', 'LOW4', 'LOW5', 'MID', 'HIGH']
 
 def main():
     ap = argparse.ArgumentParser(description='One-shot FT8 TX via UV-K1/K5V3 digmode')
+    ap.add_argument('-L', '--list-ports', action='store_true',
+                    help='List serial ports and exit')
     ap.add_argument('-p', '--port', default=None,
-                    help='Serial port (auto-detects AIOC if omitted)')
+                    help='Serial port (default: AIOC by-id, else first USB serial)')
     ap.add_argument('-b', '--baud', type=int, default=38400)
     ap.add_argument('--power', type=str, default=None,
                     help='TX power: LOW1-LOW5, MID, HIGH, or 0-7 (default: current VFO)')
@@ -155,12 +206,18 @@ def main():
                     help='TX start offset within slot, seconds (default: 0.5)')
     args = ap.parse_args()
 
+    if args.list_ports:
+        print_serial_ports()
+        sys.exit(0)
+
     port = args.port
+    port_note = ''
     if port is None:
-        port = find_aioc_port()
+        port, tag = find_default_serial_port()
         if port is None:
-            print("[ft8] ERROR: no AIOC found, specify --port manually")
+            print(f"[ft8] ERROR: {tag}. Use -L to list ports, or -p /dev/ttyUSB0 etc.")
             sys.exit(1)
+        port_note = f' — {tag}'
     baud = args.baud
 
     power_byte = 0xFF
@@ -174,7 +231,7 @@ def main():
             print(f"[ft8] ERROR: invalid power '{args.power}'. Use LOW1-LOW5, MID, HIGH, or 0-7")
             sys.exit(1)
 
-    print(f"[ft8] Port: {port} @ {baud}")
+    print(f"[ft8] Port: {port} @ {baud}{port_note}")
     ser = serial.Serial(port, baud, timeout=0.1)
     time.sleep(0.3)
     ser.reset_input_buffer()
