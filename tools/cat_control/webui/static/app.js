@@ -12,6 +12,25 @@
     "P7",
   ];
 
+  function rssiToDbm(raw) {
+    return (raw / 2) - 160;
+  }
+
+  function dbmToSMeter(dBm) {
+    if (dBm <= -121) return "S0";
+    if (dBm <= -115) return "S1";
+    if (dBm <= -109) return "S2";
+    if (dBm <= -103) return "S3";
+    if (dBm <= -97)  return "S4";
+    if (dBm <= -91)  return "S5";
+    if (dBm <= -85)  return "S6";
+    if (dBm <= -79)  return "S7";
+    if (dBm <= -73)  return "S8";
+    if (dBm <= -63)  return "S9";
+    const over = dBm + 63;
+    return "S9+" + Math.min(Math.round(over), 99);
+  }
+
   const $ = (id) => document.getElementById(id);
 
   let statusTimer = null;
@@ -145,14 +164,20 @@
   async function pollStatus() {
     try {
       const s = await api("/api/status");
-      $("telTx").textContent = s.tx_active ? "开" : "关";
+      $("telTx").textContent = s.tx_active ? "发射" : "—";
       $("telTx").classList.toggle("on", !!s.tx_active);
-      $("telRx").textContent = s.rx_active ? "开" : "关";
+      $("telRx").textContent = s.rx_active ? "接收" : "—";
       $("telRx").classList.toggle("on", !!s.rx_active);
-      $("telRssi").textContent = String(s.rssi ?? "—");
-      const mv = s.battery_mv;
+
+      const rssiRaw = s.rssi ?? 0;
+      const dBm = rssiToDbm(rssiRaw);
+      const sMeter = dbmToSMeter(dBm);
+      $("telRssi").textContent = `${dBm} dBm  ${sMeter}`;
+
+      const bv = s.battery_mv;
       $("telBatt").textContent =
-        mv != null ? (mv / 1000).toFixed(2) + " V" : "—";
+        bv != null ? (bv / 100).toFixed(2) + " V" : "—";
+
       $("telVox").textContent = s.vox_triggered ? "触发" : "—";
     } catch (e) {
       /* ignore transient */
