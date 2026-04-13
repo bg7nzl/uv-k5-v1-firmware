@@ -23,7 +23,7 @@ ifeq ($(ENABLE_DTMF),0)
 endif
 
 # ---- CUSTOM MODS ----
-ENABLE_BIG_FREQ               ?= 0
+ENABLE_BIG_FREQ               ?= 1
 ENABLE_SMALL_BOLD             ?= 1
 ENABLE_CUSTOM_MENU_LAYOUT     ?= 1
 ENABLE_KEEP_MEM_NAME          ?= 1
@@ -164,7 +164,6 @@ ifeq ($(ENABLE_DIGMODE),1)
 endif
 ifeq ($(ENABLE_CATMODE),1)
 	OBJS += app/catmode.o
-	OBJS += ui/catmode.o
 endif
 ifeq ($(ENABLE_AM_FIX), 1)
 	OBJS += am_fix.o

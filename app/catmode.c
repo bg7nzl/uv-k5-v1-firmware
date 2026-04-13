@@ -38,15 +38,40 @@ extern uint16_t gBatteryVoltageAverage;
 /* ------------------------------------------------------------------ */
 
 volatile bool gCatModeEntered = false;
-CatParams_t gCatParams;
-CatDisplayState_t gCatDisplay;
 
 /* ------------------------------------------------------------------ */
 /*  Internal state                                                     */
 /* ------------------------------------------------------------------ */
 
-static VFO_Info_t sCatVfoBackup;
 static uint16_t sHeartbeatCountdown;  /* 10ms ticks */
+
+/* Saved VOX params that we override while in CAT (read from gEeprom on enter) */
+static uint8_t sSavedVoxSwitch;
+static uint8_t sSavedVoxLevel;
+static uint8_t sSavedVoxDelay;
+
+/* ------------------------------------------------------------------ */
+/*  K1 -> K5 power mapping                                             */
+/*  K1: 0-4=LOW1..LOW5, 5=MID, 6=HIGH, 7=HIGH                        */
+/*  K5: 0=LOW, 1=MID, 2=HIGH                                          */
+/* ------------------------------------------------------------------ */
+
+static uint8_t MapPowerK1toK5(uint8_t k1_power)
+{
+    if (k1_power <= 4) return 0;  /* LOW */
+    if (k1_power == 5) return 1;  /* MID */
+    return 2;                     /* HIGH */
+}
+
+static uint8_t MapPowerK5toK1(uint8_t k5_power)
+{
+    switch (k5_power) {
+        case 0: return 0;   /* LOW  -> LOW1 */
+        case 1: return 5;   /* MID  -> MID  */
+        case 2: return 6;   /* HIGH -> HIGH */
+        default: return 0;
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Parameter size lookup                                              */
@@ -71,7 +96,7 @@ static uint8_t ParamSize(uint8_t param_id)
 }
 
 /* ------------------------------------------------------------------ */
-/*  UART frame helpers (same pattern as digmode)                       */
+/*  UART frame helpers                                                 */
 /* ------------------------------------------------------------------ */
 
 static void SendFrame(const uint8_t *data, uint8_t len)
@@ -131,135 +156,40 @@ static inline void HeartbeatReset(void)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Apply parameters to hardware                                       */
+/*  Apply current VFO settings to hardware                             */
 /* ------------------------------------------------------------------ */
 
-static void CAT_ApplyParams(void)
+static void CAT_ApplyHardware(void)
 {
-    /* Frequency */
-    gCurrentVfo->pRX->Frequency = gCatParams.rx_freq;
-
-    switch (gCatParams.offset_dir) {
-        case 1:
-            gCurrentVfo->pTX->Frequency = gCatParams.rx_freq + gCatParams.tx_offset;
-            break;
-        case 2:
-            gCurrentVfo->pTX->Frequency = gCatParams.rx_freq - gCatParams.tx_offset;
-            break;
-        default:
-            gCurrentVfo->pTX->Frequency = gCatParams.tx_freq;
-            break;
-    }
-
-    gCurrentVfo->TX_OFFSET_FREQUENCY = gCatParams.tx_offset;
-    gCurrentVfo->TX_OFFSET_FREQUENCY_DIRECTION = gCatParams.offset_dir;
-
-    /* Tone codes */
-    gCurrentVfo->pRX->CodeType = (DCS_CodeType_t)gCatParams.rx_tone_type;
-    gCurrentVfo->pRX->Code     = gCatParams.rx_tone_code;
-    gCurrentVfo->pTX->CodeType = (DCS_CodeType_t)gCatParams.tx_tone_type;
-    gCurrentVfo->pTX->Code     = gCatParams.tx_tone_code;
-
-    /* Modulation & bandwidth */
-    gCurrentVfo->Modulation        = (ModulationMode_t)gCatParams.modulation;
-    gCurrentVfo->CHANNEL_BANDWIDTH = gCatParams.bandwidth;
-
-    /* Power */
-    gCurrentVfo->OUTPUT_POWER = gCatParams.tx_power;
-
-    /* Other VFO fields */
-    gCurrentVfo->Compander      = gCatParams.compander;
-    gCurrentVfo->SCRAMBLING_TYPE = gCatParams.scramble;
-    gCurrentVfo->BUSY_CHANNEL_LOCK = gCatParams.busy_lock;
-
-    /* Squelch & output power calibration */
     RADIO_ConfigureSquelchAndOutputPower(gCurrentVfo);
-
-    /* Full register reload */
     RADIO_SetupRegisters(true);
 
-    /* Audio path: keep mic and speaker active (unlike digmode which mutes them) */
     AUDIO_AudioPathOn();
     gEnableSpeaker = true;
     BK4819_SetAF(BK4819_AF_FM);
 
-    /* MIC gain (gMicGain_dB2 has 5 entries; clamp index) */
     {
-        uint8_t mic_idx = gCatParams.mic_gain;
+        uint8_t mic_idx = gEeprom.MIC_SENSITIVITY;
         if (mic_idx > 4U)
             mic_idx = 4U;
         BK4819_WriteRegister(BK4819_REG_7D, 0xE940 | (gMicGain_dB2[mic_idx] & 0x3F));
     }
 
-    /* Speaker + DAC gain */
     BK4819_WriteRegister(BK4819_REG_48,
         (11u << 12) |
         ( 0u << 10) |
-        ((uint16_t)(gCatParams.speaker_gain & 0x0F) << 4) |
-        ((uint16_t)(gCatParams.dac_gain & 0x0F)));
+        ((uint16_t)(gEeprom.VOLUME_GAIN & 0x0F) << 4) |
+        ((uint16_t)(gEeprom.DAC_GAIN & 0x0F)));
 
-    /* VOX */
 #ifdef ENABLE_VOX
-    if (gCatParams.vox_switch) {
+    if (gEeprom.VOX_SWITCH) {
         BK4819_EnableVox(gEeprom.VOX1_THRESHOLD, gEeprom.VOX0_THRESHOLD);
     } else {
         BK4819_DisableVox();
     }
 #endif
 
-    /* Update display state */
-    gCatDisplay.rx_freq      = gCatParams.rx_freq;
-    gCatDisplay.tx_freq      = gCurrentVfo->pTX->Frequency;
-    gCatDisplay.tx_power     = gCatParams.tx_power;
-    gCatDisplay.modulation   = gCatParams.modulation;
-    gCatDisplay.bandwidth    = gCatParams.bandwidth;
-    gCatDisplay.vox_switch   = gCatParams.vox_switch;
-    gCatDisplay.vox_level    = gCatParams.vox_level;
-    gCatDisplay.squelch_level = gCatParams.squelch_level;
-    gCatDisplay.offset_dir   = gCatParams.offset_dir;
-    gCatDisplay.tx_offset    = gCatParams.tx_offset;
-    gCatDisplay.rx_tone_type = gCatParams.rx_tone_type;
-    gCatDisplay.rx_tone_code = gCatParams.rx_tone_code;
-    gCatDisplay.tx_tone_type = gCatParams.tx_tone_type;
-    gCatDisplay.tx_tone_code = gCatParams.tx_tone_code;
-    gCatDisplay.heartbeat_ok = true;
-
     gUpdateDisplay = true;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Init params from current VFO state                                 */
-/* ------------------------------------------------------------------ */
-
-static void CAT_InitParamsFromVfo(void)
-{
-    gCatParams.rx_freq      = gCurrentVfo->pRX->Frequency;
-    gCatParams.tx_freq      = gCurrentVfo->pTX->Frequency;
-    gCatParams.tx_offset    = gCurrentVfo->TX_OFFSET_FREQUENCY;
-    gCatParams.offset_dir   = gCurrentVfo->TX_OFFSET_FREQUENCY_DIRECTION;
-
-    gCatParams.rx_tone_type = (uint8_t)gCurrentVfo->pRX->CodeType;
-    gCatParams.rx_tone_code = gCurrentVfo->pRX->Code;
-    gCatParams.tx_tone_type = (uint8_t)gCurrentVfo->pTX->CodeType;
-    gCatParams.tx_tone_code = gCurrentVfo->pTX->Code;
-
-    gCatParams.modulation   = (uint8_t)gCurrentVfo->Modulation;
-    gCatParams.bandwidth    = gCurrentVfo->CHANNEL_BANDWIDTH;
-    gCatParams.tx_power     = gCurrentVfo->OUTPUT_POWER;
-    gCatParams.squelch_level = 1;
-
-    gCatParams.vox_switch   = gEeprom.VOX_SWITCH ? 1 : 0;
-    gCatParams.vox_level    = gEeprom.VOX_LEVEL;
-    gCatParams.vox_delay    = 10;  /* 1000ms default */
-
-    gCatParams.mic_gain     = gEeprom.MIC_SENSITIVITY;
-    gCatParams.speaker_gain = gEeprom.VOLUME_GAIN;
-    gCatParams.dac_gain     = gEeprom.DAC_GAIN;
-
-    gCatParams.compander    = gCurrentVfo->Compander;
-    gCatParams.scramble     = gCurrentVfo->SCRAMBLING_TYPE;
-    gCatParams.busy_lock    = gCurrentVfo->BUSY_CHANNEL_LOCK;
-    gCatParams.step_index   = (uint8_t)gCurrentVfo->STEP_SETTING;
 }
 
 /* ------------------------------------------------------------------ */
@@ -276,14 +206,24 @@ static void DoEnterCat(void)
 #endif
 
     if (!gCatModeEntered) {
-        /* Backup current VFO */
-        sCatVfoBackup = *gCurrentVfo;
+        uint8_t vfo = gEeprom.TX_VFO;
 
-        CAT_InitParamsFromVfo();
+        /* Force current channel into VFO (frequency) mode if it's MR */
+        if (IS_MR_CHANNEL(gEeprom.ScreenChannel[vfo])) {
+            gEeprom.ScreenChannel[vfo] = gEeprom.FreqChannel[vfo];
+            gRequestSaveVFO   = true;
+            gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+        }
+
+        /* Save VOX state so we can apply CAT-requested VOX separately */
+        sSavedVoxSwitch = gEeprom.VOX_SWITCH;
+        sSavedVoxLevel  = gEeprom.VOX_LEVEL;
+        sSavedVoxDelay  = 10;
+
         gCatModeEntered = true;
 
-        GUI_SelectNextDisplay(DISPLAY_CATMODE);
-        CAT_ApplyParams();
+        GUI_SelectNextDisplay(DISPLAY_MAIN);
+        CAT_ApplyHardware();
     }
 
     HeartbeatReset();
@@ -297,25 +237,139 @@ static void DoExitCat(void)
         return;
     }
 
-    /* Stop TX if active */
     if (gCurrentFunction == FUNCTION_TRANSMIT) {
         FUNCTION_Select(FUNCTION_FOREGROUND);
     }
 
-    /* Restore VFO */
-    *gCurrentVfo = sCatVfoBackup;
-    gCurrentVfo->pRX = &gCurrentVfo->freq_config_RX;
-    gCurrentVfo->pTX = &gCurrentVfo->freq_config_TX;
+    gCatModeEntered = false;
 
     RADIO_SetupRegisters(true);
-
-    gCatModeEntered = false;
-    gCatDisplay.heartbeat_ok = false;
 
     gRequestDisplayScreen = DISPLAY_MAIN;
     gUpdateDisplay = true;
 
     SendAck(CAT_CMD_EXIT, CAT_RESULT_OK);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Write a single parameter to the current VFO / gEeprom             */
+/* ------------------------------------------------------------------ */
+
+static void WriteParam(uint8_t param_id, uint32_t val32, uint16_t val16, uint8_t val8)
+{
+    switch (param_id) {
+        case CAT_PARAM_RX_FREQ:
+            gCurrentVfo->pRX->Frequency = val32;
+            break;
+        case CAT_PARAM_TX_FREQ:
+            gCurrentVfo->pTX->Frequency = val32;
+            break;
+        case CAT_PARAM_TX_OFFSET:
+            gCurrentVfo->TX_OFFSET_FREQUENCY = val32;
+            break;
+        case CAT_PARAM_OFFSET_DIR:
+            gCurrentVfo->TX_OFFSET_FREQUENCY_DIRECTION = val8;
+            break;
+        case CAT_PARAM_RX_TONE_TYPE:
+            gCurrentVfo->pRX->CodeType = (DCS_CodeType_t)val8;
+            break;
+        case CAT_PARAM_RX_TONE_CODE:
+            gCurrentVfo->pRX->Code = val16;
+            break;
+        case CAT_PARAM_TX_TONE_TYPE:
+            gCurrentVfo->pTX->CodeType = (DCS_CodeType_t)val8;
+            break;
+        case CAT_PARAM_TX_TONE_CODE:
+            gCurrentVfo->pTX->Code = val16;
+            break;
+        case CAT_PARAM_MODULATION:
+            gCurrentVfo->Modulation = (ModulationMode_t)val8;
+            break;
+        case CAT_PARAM_TX_POWER:
+            gCurrentVfo->OUTPUT_POWER = MapPowerK1toK5(val8);
+            break;
+        case CAT_PARAM_BANDWIDTH:
+            gCurrentVfo->CHANNEL_BANDWIDTH = val8;
+            break;
+        case CAT_PARAM_SQUELCH:
+            gEeprom.SQUELCH_LEVEL = val8;
+            break;
+        case CAT_PARAM_VOX_SWITCH:
+            gEeprom.VOX_SWITCH = val8;
+            break;
+        case CAT_PARAM_VOX_LEVEL:
+            gEeprom.VOX_LEVEL = val8;
+            break;
+        case CAT_PARAM_VOX_DELAY:
+            sSavedVoxDelay = val8;
+            break;
+        case CAT_PARAM_MIC_GAIN:
+            gEeprom.MIC_SENSITIVITY = (val8 > 4) ? 4 : val8;
+            break;
+        case CAT_PARAM_SPEAKER_GAIN:
+            gEeprom.VOLUME_GAIN = val8 & 0x0F;
+            break;
+        case CAT_PARAM_DAC_GAIN:
+            gEeprom.DAC_GAIN = val8 & 0x0F;
+            break;
+        case CAT_PARAM_COMPANDER:
+            gCurrentVfo->Compander = val8;
+            break;
+        case CAT_PARAM_SCRAMBLE:
+            gCurrentVfo->SCRAMBLING_TYPE = val8;
+            break;
+        case CAT_PARAM_BUSY_LOCK:
+            gCurrentVfo->BUSY_CHANNEL_LOCK = val8;
+            break;
+        case CAT_PARAM_STEP:
+            gCurrentVfo->STEP_SETTING = val8;
+            break;
+        default:
+            break;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Read a single parameter from the current VFO / gEeprom            */
+/* ------------------------------------------------------------------ */
+
+static void ReadParam(uint8_t param_id, uint32_t *out32, uint16_t *out16, uint8_t *out8)
+{
+    switch (param_id) {
+        case CAT_PARAM_RX_FREQ:      *out32 = gCurrentVfo->pRX->Frequency; break;
+        case CAT_PARAM_TX_FREQ:      *out32 = gCurrentVfo->pTX->Frequency; break;
+        case CAT_PARAM_TX_OFFSET:    *out32 = gCurrentVfo->TX_OFFSET_FREQUENCY; break;
+        case CAT_PARAM_OFFSET_DIR:   *out8  = gCurrentVfo->TX_OFFSET_FREQUENCY_DIRECTION; break;
+        case CAT_PARAM_RX_TONE_TYPE: *out8  = (uint8_t)gCurrentVfo->pRX->CodeType; break;
+        case CAT_PARAM_RX_TONE_CODE: *out16 = gCurrentVfo->pRX->Code; break;
+        case CAT_PARAM_TX_TONE_TYPE: *out8  = (uint8_t)gCurrentVfo->pTX->CodeType; break;
+        case CAT_PARAM_TX_TONE_CODE: *out16 = gCurrentVfo->pTX->Code; break;
+        case CAT_PARAM_MODULATION:   *out8  = (uint8_t)gCurrentVfo->Modulation; break;
+        case CAT_PARAM_TX_POWER:     *out8  = MapPowerK5toK1(gCurrentVfo->OUTPUT_POWER); break;
+        case CAT_PARAM_BANDWIDTH:    *out8  = gCurrentVfo->CHANNEL_BANDWIDTH; break;
+        case CAT_PARAM_SQUELCH:      *out8  = gEeprom.SQUELCH_LEVEL; break;
+        case CAT_PARAM_VOX_SWITCH:   *out8  = gEeprom.VOX_SWITCH ? 1 : 0; break;
+        case CAT_PARAM_VOX_LEVEL:    *out8  = gEeprom.VOX_LEVEL; break;
+        case CAT_PARAM_VOX_DELAY:    *out8  = sSavedVoxDelay; break;
+        case CAT_PARAM_MIC_GAIN:     *out8  = gEeprom.MIC_SENSITIVITY; break;
+        case CAT_PARAM_SPEAKER_GAIN: *out8  = gEeprom.VOLUME_GAIN; break;
+        case CAT_PARAM_DAC_GAIN:     *out8  = gEeprom.DAC_GAIN; break;
+        case CAT_PARAM_COMPANDER:    *out8  = gCurrentVfo->Compander; break;
+        case CAT_PARAM_SCRAMBLE:     *out8  = gCurrentVfo->SCRAMBLING_TYPE; break;
+        case CAT_PARAM_BUSY_LOCK:    *out8  = gCurrentVfo->BUSY_CHANNEL_LOCK; break;
+        case CAT_PARAM_STEP:         *out8  = (uint8_t)gCurrentVfo->STEP_SETTING; break;
+        case CAT_PARAM_MIC_BAR: {
+            uint16_t amp;
+            BK4819_GetVoxAmp(&amp);
+            *out8 = (amp > 255) ? 255 : (uint8_t)amp;
+            break;
+        }
+        case CAT_PARAM_RSSI:
+            *out16 = BK4819_GetRSSI();
+            break;
+        default:
+            break;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,45 +392,12 @@ static void HandleSetParam(const uint8_t *buf, uint16_t buf_size,
     uint8_t  val8  = 0;
 
     switch (psize) {
-        case 4:
-            val32 = CRead32BE(buf, buf_size, start_idx, 4);
-            break;
-        case 2:
-            val16 = CRead16BE(buf, buf_size, start_idx, 4);
-            break;
-        case 1:
-            val8 = CRead(buf, buf_size, start_idx, 4);
-            break;
+        case 4: val32 = CRead32BE(buf, buf_size, start_idx, 4); break;
+        case 2: val16 = CRead16BE(buf, buf_size, start_idx, 4); break;
+        case 1: val8  = CRead(buf, buf_size, start_idx, 4);     break;
     }
 
-    switch (param_id) {
-        case CAT_PARAM_RX_FREQ:      gCatParams.rx_freq      = val32; break;
-        case CAT_PARAM_TX_FREQ:      gCatParams.tx_freq      = val32; break;
-        case CAT_PARAM_TX_OFFSET:    gCatParams.tx_offset    = val32; break;
-        case CAT_PARAM_OFFSET_DIR:   gCatParams.offset_dir   = val8;  break;
-        case CAT_PARAM_RX_TONE_TYPE: gCatParams.rx_tone_type = val8;  break;
-        case CAT_PARAM_RX_TONE_CODE: gCatParams.rx_tone_code = val16; break;
-        case CAT_PARAM_TX_TONE_TYPE: gCatParams.tx_tone_type = val8;  break;
-        case CAT_PARAM_TX_TONE_CODE: gCatParams.tx_tone_code = val16; break;
-        case CAT_PARAM_MODULATION:   gCatParams.modulation   = val8;  break;
-        case CAT_PARAM_TX_POWER:     gCatParams.tx_power     = val8;  break;
-        case CAT_PARAM_BANDWIDTH:    gCatParams.bandwidth    = val8;  break;
-        case CAT_PARAM_SQUELCH:      gCatParams.squelch_level = val8; break;
-        case CAT_PARAM_VOX_SWITCH:   gCatParams.vox_switch   = val8;  break;
-        case CAT_PARAM_VOX_LEVEL:    gCatParams.vox_level    = val8;  break;
-        case CAT_PARAM_VOX_DELAY:    gCatParams.vox_delay    = val8;  break;
-        case CAT_PARAM_MIC_GAIN:     gCatParams.mic_gain     = val8;  break;
-        case CAT_PARAM_SPEAKER_GAIN: gCatParams.speaker_gain = val8;  break;
-        case CAT_PARAM_DAC_GAIN:     gCatParams.dac_gain     = val8;  break;
-        case CAT_PARAM_COMPANDER:    gCatParams.compander    = val8;  break;
-        case CAT_PARAM_SCRAMBLE:     gCatParams.scramble     = val8;  break;
-        case CAT_PARAM_BUSY_LOCK:    gCatParams.busy_lock    = val8;  break;
-        case CAT_PARAM_STEP:         gCatParams.step_index   = val8;  break;
-        default:
-            SendAck(CAT_CMD_SET_PARAM, CAT_RESULT_ERR);
-            return;
-    }
-
+    WriteParam(param_id, val32, val16, val8);
     SendAck(CAT_CMD_SET_PARAM, CAT_RESULT_OK);
 }
 
@@ -409,52 +430,20 @@ static void HandleSetMulti(const uint8_t *buf, uint16_t buf_size,
         uint8_t  val8  = 0;
 
         switch (psize) {
-            case 4:
-                val32 = CRead32BE(buf, buf_size, start_idx, offset);
-                break;
-            case 2:
-                val16 = CRead16BE(buf, buf_size, start_idx, offset);
-                break;
-            case 1:
-                val8 = CRead(buf, buf_size, start_idx, offset);
-                break;
+            case 4: val32 = CRead32BE(buf, buf_size, start_idx, offset); break;
+            case 2: val16 = CRead16BE(buf, buf_size, start_idx, offset); break;
+            case 1: val8  = CRead(buf, buf_size, start_idx, offset);     break;
         }
 
         offset += psize;
-
-        switch (param_id) {
-            case CAT_PARAM_RX_FREQ:      gCatParams.rx_freq      = val32; break;
-            case CAT_PARAM_TX_FREQ:      gCatParams.tx_freq      = val32; break;
-            case CAT_PARAM_TX_OFFSET:    gCatParams.tx_offset    = val32; break;
-            case CAT_PARAM_OFFSET_DIR:   gCatParams.offset_dir   = val8;  break;
-            case CAT_PARAM_RX_TONE_TYPE: gCatParams.rx_tone_type = val8;  break;
-            case CAT_PARAM_RX_TONE_CODE: gCatParams.rx_tone_code = val16; break;
-            case CAT_PARAM_TX_TONE_TYPE: gCatParams.tx_tone_type = val8;  break;
-            case CAT_PARAM_TX_TONE_CODE: gCatParams.tx_tone_code = val16; break;
-            case CAT_PARAM_MODULATION:   gCatParams.modulation   = val8;  break;
-            case CAT_PARAM_TX_POWER:     gCatParams.tx_power     = val8;  break;
-            case CAT_PARAM_BANDWIDTH:    gCatParams.bandwidth    = val8;  break;
-            case CAT_PARAM_SQUELCH:      gCatParams.squelch_level = val8; break;
-            case CAT_PARAM_VOX_SWITCH:   gCatParams.vox_switch   = val8;  break;
-            case CAT_PARAM_VOX_LEVEL:    gCatParams.vox_level    = val8;  break;
-            case CAT_PARAM_VOX_DELAY:    gCatParams.vox_delay    = val8;  break;
-            case CAT_PARAM_MIC_GAIN:     gCatParams.mic_gain     = val8;  break;
-            case CAT_PARAM_SPEAKER_GAIN: gCatParams.speaker_gain = val8;  break;
-            case CAT_PARAM_DAC_GAIN:     gCatParams.dac_gain     = val8;  break;
-            case CAT_PARAM_COMPANDER:    gCatParams.compander    = val8;  break;
-            case CAT_PARAM_SCRAMBLE:     gCatParams.scramble     = val8;  break;
-            case CAT_PARAM_BUSY_LOCK:    gCatParams.busy_lock    = val8;  break;
-            case CAT_PARAM_STEP:         gCatParams.step_index   = val8;  break;
-            default:
-                break;
-        }
+        WriteParam(param_id, val32, val16, val8);
     }
 
     SendAck(CAT_CMD_SET_MULTI, CAT_RESULT_OK);
 }
 
 /* ------------------------------------------------------------------ */
-/*  GET_PARAM / PARAM_RESP helper                                      */
+/*  GET_PARAM / PARAM_RESP                                             */
 /* ------------------------------------------------------------------ */
 
 static void SendParamResp(uint8_t param_id)
@@ -463,7 +452,7 @@ static void SendParamResp(uint8_t param_id)
     if (psize == 0)
         return;
 
-    uint8_t frame[8];  /* max: SYNC(1)+CMD(1)+LEN(1)+id(1)+val(4) = 8 */
+    uint8_t frame[8];
     frame[0] = CAT_SYNC;
     frame[1] = CAT_CMD_PARAM_RESP;
     frame[2] = 1 + psize;
@@ -473,41 +462,7 @@ static void SendParamResp(uint8_t param_id)
     uint16_t val16 = 0;
     uint8_t  val8  = 0;
 
-    switch (param_id) {
-        case CAT_PARAM_RX_FREQ:      val32 = gCatParams.rx_freq;      break;
-        case CAT_PARAM_TX_FREQ:      val32 = gCatParams.tx_freq;      break;
-        case CAT_PARAM_TX_OFFSET:    val32 = gCatParams.tx_offset;    break;
-        case CAT_PARAM_OFFSET_DIR:   val8  = gCatParams.offset_dir;   break;
-        case CAT_PARAM_RX_TONE_TYPE: val8  = gCatParams.rx_tone_type; break;
-        case CAT_PARAM_RX_TONE_CODE: val16 = gCatParams.rx_tone_code; break;
-        case CAT_PARAM_TX_TONE_TYPE: val8  = gCatParams.tx_tone_type; break;
-        case CAT_PARAM_TX_TONE_CODE: val16 = gCatParams.tx_tone_code; break;
-        case CAT_PARAM_MODULATION:   val8  = gCatParams.modulation;   break;
-        case CAT_PARAM_TX_POWER:     val8  = gCatParams.tx_power;     break;
-        case CAT_PARAM_BANDWIDTH:    val8  = gCatParams.bandwidth;    break;
-        case CAT_PARAM_SQUELCH:      val8  = gCatParams.squelch_level; break;
-        case CAT_PARAM_VOX_SWITCH:   val8  = gCatParams.vox_switch;   break;
-        case CAT_PARAM_VOX_LEVEL:    val8  = gCatParams.vox_level;    break;
-        case CAT_PARAM_VOX_DELAY:    val8  = gCatParams.vox_delay;    break;
-        case CAT_PARAM_MIC_GAIN:     val8  = gCatParams.mic_gain;     break;
-        case CAT_PARAM_SPEAKER_GAIN: val8  = gCatParams.speaker_gain; break;
-        case CAT_PARAM_DAC_GAIN:     val8  = gCatParams.dac_gain;     break;
-        case CAT_PARAM_COMPANDER:    val8  = gCatParams.compander;    break;
-        case CAT_PARAM_SCRAMBLE:     val8  = gCatParams.scramble;     break;
-        case CAT_PARAM_BUSY_LOCK:    val8  = gCatParams.busy_lock;    break;
-        case CAT_PARAM_STEP:         val8  = gCatParams.step_index;   break;
-        case CAT_PARAM_MIC_BAR: {
-            uint16_t amp;
-            BK4819_GetVoxAmp(&amp);
-            val8 = (amp > 255) ? 255 : (uint8_t)amp;
-            break;
-        }
-        case CAT_PARAM_RSSI:
-            val16 = BK4819_GetRSSI();
-            break;
-        default:
-            return;
-    }
+    ReadParam(param_id, &val32, &val16, &val8);
 
     switch (psize) {
         case 4:
@@ -533,13 +488,11 @@ static void HandleGetParam(const uint8_t *buf, uint16_t buf_size,
 {
     if (len < 1)
         return;
-
-    uint8_t param_id = CRead(buf, buf_size, start_idx, 3);
-    SendParamResp(param_id);
+    SendParamResp(CRead(buf, buf_size, start_idx, 3));
 }
 
 /* ------------------------------------------------------------------ */
-/*  GET_ALL / ALL_RESP                                                 */
+/*  GET_ALL                                                            */
 /* ------------------------------------------------------------------ */
 
 static void HandleGetAll(void)
@@ -572,12 +525,8 @@ static void SendStatusResp(void)
 #else
     frame[9]  = 0;
 #endif
-    frame[10] = 0;  /* temperature placeholder */
+    frame[10] = 0;
     SendFrame(frame, 11);
-
-    gCatDisplay.tx_active = (gCurrentFunction == FUNCTION_TRANSMIT);
-    gCatDisplay.rx_active = (gCurrentFunction == FUNCTION_RECEIVE);
-    gCatDisplay.rssi      = rssi;
 }
 
 /* ------------------------------------------------------------------ */
@@ -599,12 +548,11 @@ uint16_t CAT_ProcessByte(const uint8_t *buf, uint16_t available,
         return 1;
 
     uint8_t len = CRead(buf, buf_size, start_idx, 2);
-    uint16_t frame_size = 3 + len + 1;  /* SYNC+CMD+LEN + payload + CRC */
+    uint16_t frame_size = 3 + len + 1;
 
     if (available < frame_size)
         return 0;
 
-    /* CRC check */
     uint8_t crc = 0;
     for (uint16_t i = 0; i < frame_size - 1; i++)
         crc ^= CRead(buf, buf_size, start_idx, i);
@@ -656,7 +604,7 @@ uint16_t CAT_ProcessByte(const uint8_t *buf, uint16_t available,
 
         case CAT_CMD_APPLY:
             if (gCatModeEntered) {
-                CAT_ApplyParams();
+                CAT_ApplyHardware();
                 SendAck(CAT_CMD_APPLY, CAT_RESULT_OK);
             } else {
                 SendAck(cmd, CAT_RESULT_ERR);
@@ -671,7 +619,6 @@ uint16_t CAT_ProcessByte(const uint8_t *buf, uint16_t available,
             break;
 
         case CAT_CMD_NOOP:
-            /* Heartbeat — already reset above, no response needed */
             break;
 
         default:
@@ -682,7 +629,7 @@ uint16_t CAT_ProcessByte(const uint8_t *buf, uint16_t available,
 }
 
 /* ------------------------------------------------------------------ */
-/*  10ms poll — heartbeat watchdog                                     */
+/*  10ms poll - heartbeat watchdog                                     */
 /* ------------------------------------------------------------------ */
 
 void CAT_Poll(void)
@@ -693,20 +640,13 @@ void CAT_Poll(void)
     if (sHeartbeatCountdown > 0) {
         sHeartbeatCountdown--;
         if (sHeartbeatCountdown == 0) {
-            /* Link lost — stop TX if active, but stay in CAT mode */
             if (gCurrentFunction == FUNCTION_TRANSMIT) {
                 FUNCTION_Select(FUNCTION_FOREGROUND);
             }
 #ifdef ENABLE_VOX
             BK4819_DisableVox();
 #endif
-            gCatDisplay.heartbeat_ok = false;
             gUpdateDisplay = true;
         }
     }
-
-    /* Update display RSSI periodically */
-    gCatDisplay.rssi = BK4819_GetRSSI();
-    gCatDisplay.tx_active = (gCurrentFunction == FUNCTION_TRANSMIT);
-    gCatDisplay.rx_active = (gCurrentFunction == FUNCTION_RECEIVE);
 }

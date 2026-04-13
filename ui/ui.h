@@ -38,10 +38,6 @@ enum GUI_DisplayType_t
 	DISPLAY_DIGMODE,
 #endif
 
-#ifdef ENABLE_CATMODE
-	DISPLAY_CATMODE,
-#endif
-
 	DISPLAY_N_ELEM,
 	DISPLAY_INVALID = 0xFFu
 };

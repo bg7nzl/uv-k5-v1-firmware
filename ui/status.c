@@ -33,6 +33,9 @@
 #include "ui/helper.h"
 #include "ui/ui.h"
 #include "ui/status.h"
+#ifdef ENABLE_CATMODE
+	#include "app/catmode.h"
+#endif
 
 void UI_DisplayStatus()
 {
@@ -127,6 +130,13 @@ void UI_DisplayStatus()
 		x1 = x + sizeof(BITMAP_VOX) + 1;
 	}
 	x += sizeof(BITMAP_VOX) + 1;
+#endif
+
+#ifdef ENABLE_CATMODE
+	if (gCatModeEntered) {
+		UI_PrintStringSmallBufferNormal("CAT", line + x);
+		x1 = x + 21;
+	}
 #endif
 
 	x = MAX(x1, 61u);

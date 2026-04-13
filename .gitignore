@@ -7,4 +7,12 @@ firmware
 .cache
 compile_commands.json
 .vscode
+.cursor
 k5_eeprom.raw
+
+__pycache__/
+*.pyc
+.venv*/
+
+/Quansheng_UV-K5_PCB_R51-V1.4_PCB_Reversing_Rev._0.9/
+/k5web/

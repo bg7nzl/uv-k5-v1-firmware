@@ -22,6 +22,9 @@ from cat_protocol import (
     freq_to_10hz, freq_from_10hz,
 )
 
+# Firmware sends one PARAM_RESP per id from 0x01 through CAT_PARAM_MAX (0x18)
+_CAT_PARAM_COUNT = 0x18
+
 
 class CatRadio:
     """High-level CAT radio control."""
@@ -161,12 +164,43 @@ class CatRadio:
     def apply(self):
         self._send_and_wait_ack(frame_apply())
 
+    def set_params(self, params: dict[int, int], apply_hw: bool = True):
+        """Set multiple raw param_id → value; optionally APPLY to hardware."""
+        if not params:
+            return
+        self._set_multi(params)
+        if apply_hw:
+            self.apply()
+
     # --- Status ---
 
     def get_status(self) -> dict:
         with self._lock:
             self._ser.write(frame_status())
             return self._read_status_resp()
+
+    def get_all_params(self) -> dict:
+        """
+        Query all CAT parameters (GET_ALL). Returns {param_id: raw_value}.
+        """
+        with self._lock:
+            self._ser.reset_input_buffer()
+            self._ser.write(frame_get_all())
+            out: dict = {}
+            for _ in range(_CAT_PARAM_COUNT):
+                resp = self._read_frame()
+                if resp is None:
+                    raise TimeoutError("Incomplete GET_ALL response")
+                cmd, payload = resp
+                if cmd != CAT_CMD_PARAM_RESP:
+                    raise RuntimeError(
+                        f"Expected PARAM_RESP during GET_ALL, got 0x{cmd:02X}")
+                parsed = parse_param_resp(payload)
+                if parsed is None:
+                    raise RuntimeError("Bad PARAM_RESP in GET_ALL")
+                pid, val = parsed
+                out[pid] = val
+            return out
 
     # --- Low-level ---
 

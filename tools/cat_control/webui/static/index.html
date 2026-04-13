@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CAT 控制台 — UV-K5</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <span class="logo">◆</span>
+        <h1>CAT 远程控制台</h1>
+        <span class="sub">串口 · 38400 · k5-v5</span>
+      </div>
+      <div class="conn-bar">
+        <label>
+          <span class="lbl">串口</span>
+          <select id="portSelect"></select>
+        </label>
+        <label>
+          <span class="lbl">波特率</span>
+          <select id="baudSelect">
+            <option value="38400" selected>38400</option>
+            <option value="115200">115200</option>
+            <option value="9600">9600</option>
+          </select>
+        </label>
+        <button type="button" class="btn secondary" id="btnRefreshPorts" title="重新枚举串口">刷新端口</button>
+        <button type="button" class="btn primary" id="btnConnect">连接</button>
+        <button type="button" class="btn danger" id="btnDisconnect" disabled>断开</button>
+        <span class="pill" id="connPill">未连接</span>
+      </div>
+    </header>
+
+    <section class="telemetry" id="telemetry" hidden>
+      <div class="tel"><span class="k">TX</span><span class="v tx" id="telTx">—</span></div>
+      <div class="tel"><span class="k">RX</span><span class="v rx" id="telRx">—</span></div>
+      <div class="tel"><span class="k">RSSI</span><span class="v" id="telRssi">—</span></div>
+      <div class="tel"><span class="k">电池</span><span class="v" id="telBatt">—</span></div>
+      <div class="tel"><span class="k">VOX</span><span class="v" id="telVox">—</span></div>
+    </section>
+
+    <main class="panels" id="mainPanels" hidden>
+      <nav class="tabs">
+        <button type="button" class="tab active" data-tab="freq">频率</button>
+        <button type="button" class="tab" data-tab="tone">亚音</button>
+        <button type="button" class="tab" data-tab="radio">模式 / 功率</button>
+        <button type="button" class="tab" data-tab="vox">VOX</button>
+        <button type="button" class="tab" data-tab="audio">音频增益</button>
+        <button type="button" class="tab" data-tab="extra">其它</button>
+      </nav>
+
+      <div class="tab-panels">
+        <section class="panel active" id="panel-freq">
+          <h2>频率与差频</h2>
+          <div class="grid2">
+            <label class="field">
+              <span>接收频率 (MHz)</span>
+              <input type="number" id="rx_freq_mhz" step="0.00001" min="0" />
+            </label>
+            <label class="field">
+              <span>发射频率 (MHz) <small id="tx_freq_hint" class="inline-hint"></small></span>
+              <input type="number" id="tx_freq_mhz" step="0.00001" min="0" />
+            </label>
+            <label class="field">
+              <span>发射偏移 (MHz)</span>
+              <input type="number" id="tx_offset_mhz" step="0.00001" min="0" />
+            </label>
+            <label class="field">
+              <span>偏移方向</span>
+              <select id="offset_dir">
+                <option value="0">无</option>
+                <option value="1">+</option>
+                <option value="2">−</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint">差频（+ / −）时 Web 只下发<strong>接收频率、偏移与方向</strong>，不单独下发「发射频率」参数；此处显示的发射频率为计算值。无偏移时下发<strong>接收 + 发射</strong>两频。修改后点「应用设置」。</p>
+        </section>
+
+        <section class="panel" id="panel-tone">
+          <h2>接收 / 发射亚音</h2>
+          <div class="grid2">
+            <div class="subblock">
+              <h3>接收</h3>
+              <label class="field">
+                <span>类型</span>
+                <select id="rx_tone_type">
+                  <option value="0">关</option>
+                  <option value="1">CTCSS</option>
+                  <option value="2">DCS</option>
+                  <option value="3">DCS 反相</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>CTCSS（选频率）</span>
+                <select id="rx_ctcss_idx"></select>
+              </label>
+              <label class="field">
+                <span>亚音代码（原始值）</span>
+                <input type="number" id="rx_tone_code" min="0" max="65535" />
+              </label>
+            </div>
+            <div class="subblock">
+              <h3>发射</h3>
+              <label class="field">
+                <span>类型</span>
+                <select id="tx_tone_type">
+                  <option value="0">关</option>
+                  <option value="1">CTCSS</option>
+                  <option value="2">DCS</option>
+                  <option value="3">DCS 反相</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>CTCSS（选频率）</span>
+                <select id="tx_ctcss_idx"></select>
+              </label>
+              <label class="field">
+                <span>亚音代码（原始值）</span>
+                <input type="number" id="tx_tone_code" min="0" max="65535" />
+              </label>
+            </div>
+          </div>
+          <p class="hint">CTCSS 使用固件内置 50 档索引；DCS 请填写与 CPS 一致的编码。</p>
+        </section>
+
+        <section class="panel" id="panel-radio">
+          <h2>调制与功率</h2>
+          <div class="grid2">
+            <label class="field">
+              <span>调制</span>
+              <select id="modulation">
+                <option value="0">FM</option>
+                <option value="1">AM</option>
+                <option value="2">USB</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>带宽</span>
+              <select id="bandwidth">
+                <option value="0">宽</option>
+                <option value="1">窄</option>
+              </select>
+            </label>
+            <label class="field full">
+              <span>发射功率 <span id="powerLabel" class="tag"></span></span>
+              <input type="range" id="tx_power" min="0" max="7" step="1" />
+            </label>
+            <label class="field full">
+              <span>静噪 (0–9)</span>
+              <input type="range" id="squelch" min="0" max="9" step="1" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-vox">
+          <h2>声控发射 (VOX)</h2>
+          <div class="grid2">
+            <label class="field">
+              <span>VOX 开关</span>
+              <select id="vox_switch">
+                <option value="0">关</option>
+                <option value="1">开</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>灵敏度 (0–9)</span>
+              <input type="range" id="vox_level" min="0" max="9" step="1" />
+            </label>
+            <label class="field">
+              <span>释放延迟 (×100ms)</span>
+              <input type="number" id="vox_delay" min="0" max="255" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-audio">
+          <h2>麦克风 / 扬声器 / DAC</h2>
+          <div class="grid2">
+            <label class="field full">
+              <span>麦克风增益 (0–4)</span>
+              <input type="range" id="mic_gain" min="0" max="4" step="1" />
+            </label>
+            <label class="field full">
+              <span>扬声器增益 (0–15)</span>
+              <input type="range" id="speaker_gain" min="0" max="15" step="1" />
+            </label>
+            <label class="field full">
+              <span>DAC 增益 (0–15)</span>
+              <input type="range" id="dac_gain" min="0" max="15" step="1" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-extra">
+          <h2>其它参数</h2>
+          <div class="grid2">
+            <label class="field">
+              <span>压扩</span>
+              <select id="compander">
+                <option value="0">关</option>
+                <option value="1">发</option>
+                <option value="2">收</option>
+                <option value="3">收发</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>扰频 (0=关)</span>
+              <input type="number" id="scramble" min="0" max="255" />
+            </label>
+            <label class="field">
+              <span>繁忙锁定</span>
+              <select id="busy_lock">
+                <option value="0">关</option>
+                <option value="1">开</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>步进索引</span>
+              <input type="number" id="step_index" min="0" max="255" />
+            </label>
+            <div class="field ro">
+              <span>MIC 电平（只读）</span>
+              <span id="mic_bar_ro">—</span>
+            </div>
+            <div class="field ro">
+              <span>RSSI 原始（只读）</span>
+              <span id="rssi_raw_ro">—</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="actions">
+        <button type="button" class="btn secondary" id="btnReload">从电台读取</button>
+        <button type="button" class="btn primary lg" id="btnApply">应用设置</button>
+        <span class="msg" id="msg"></span>
+      </footer>
+    </main>
+
+    <footer class="page-foot">
+      <span>本地服务 · 勿暴露到公网</span>
+    </footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

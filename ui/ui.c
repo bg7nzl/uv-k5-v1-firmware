@@ -32,9 +32,6 @@
 #if defined(ENABLE_DIGMODE)
 	#include "ui/digmode.h"
 #endif
-#ifdef ENABLE_CATMODE
-	#include "ui/catmode.h"
-#endif
 #ifdef ENABLE_FMRADIO
 	#include "ui/fmradio.h"
 #endif
@@ -70,9 +67,6 @@ void (*UI_DisplayFunctions[])(void) = {
 	[DISPLAY_DIGMODE] = &UI_DisplayDigmode,
 #endif
 
-#ifdef ENABLE_CATMODE
-	[DISPLAY_CATMODE] = &UI_DisplayCatmode,
-#endif
 };
 
 static_assert(ARRAY_SIZE(UI_DisplayFunctions) == DISPLAY_N_ELEM);

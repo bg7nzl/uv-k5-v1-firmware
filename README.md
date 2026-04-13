@@ -53,7 +53,7 @@ Anyway, have fun.
    * reordered and renamed menu entries
    * LCD interference crash fix
    * many others...
-   * **CAT control** (optional, `ENABLE_CATMODE` in `Makefile`): serial protocol on the programming UART (38400 baud), PC helpers under [`tools/cat_control/`](tools/cat_control/). Same frame format as the reference `github-repo` build; LCD page uses compact numeric labels to save flash.
+   * **CAT control** (optional, `ENABLE_CATMODE` in `Makefile`): serial protocol on the programming UART (38400 baud), PC helpers under [`tools/cat_control/`](tools/cat_control/) (CLI + optional `webui/server.py` browser UI). Same frame format as the reference `github-repo` build.
 
  ## Manual
 
