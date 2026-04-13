@@ -45,6 +45,9 @@
 #if defined(ENABLE_DIGMODE)
 	#include "app/digmode.h"
 #endif
+#ifdef ENABLE_CATMODE
+	#include "app/catmode.h"
+#endif
 #include "ARMCM0.h"
 #include "audio.h"
 #include "board.h"
@@ -93,6 +96,15 @@ static void DIGMODE_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 }
 #endif
 
+#ifdef ENABLE_CATMODE
+static void CAT_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
+{
+	(void)Key;
+	(void)bKeyPressed;
+	(void)bKeyHeld;
+}
+#endif
+
 void (*ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld) = {
 	[DISPLAY_MAIN] = &MAIN_ProcessKeys,
 	[DISPLAY_MENU] = &MENU_ProcessKeys,
@@ -108,6 +120,10 @@ void (*ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld) 
 
 #if defined(ENABLE_DIGMODE)
 	[DISPLAY_DIGMODE] = &DIGMODE_ProcessKeys,
+#endif
+
+#ifdef ENABLE_CATMODE
+	[DISPLAY_CATMODE] = &CAT_ProcessKeys,
 #endif
 };
 
@@ -777,6 +793,9 @@ static void HandleVox(void)
 #if defined(ENABLE_DIGMODE)
 		    && !gDigmodeEntered
 #endif
+#if defined(ENABLE_CATMODE)
+		    && !gCatModeEntered
+#endif
 		    ) {
 			if (gFlagEndTransmission) {
 				//if (gCurrentFunction != FUNCTION_FOREGROUND)
@@ -829,6 +848,9 @@ void APP_Update(void)
 	if (gCurrentFunction == FUNCTION_TRANSMIT && (gTxTimeoutReached || SerialConfigInProgress())
 #if defined(ENABLE_DIGMODE)
 	    && !gDigmodeEntered
+#endif
+#if defined(ENABLE_CATMODE)
+	    && !gCatModeEntered
 #endif
 	    )
 	{	// transmitter timed out or must de-key
@@ -1154,6 +1176,10 @@ void APP_TimeSlice10ms(void)
 
 #if defined(ENABLE_DIGMODE)
 	DIGMODE_Poll();
+#endif
+
+#ifdef ENABLE_CATMODE
+	CAT_Poll();
 #endif
 
 	if (gUpdateDisplay) {
@@ -1559,6 +1585,11 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
 #if defined(ENABLE_DIGMODE)
 	if (gDigmodeEntered && Key == KEY_PTT)
+		return;
+#endif
+
+#ifdef ENABLE_CATMODE
+	if (gCatModeEntered && Key == KEY_PTT)
 		return;
 #endif
 

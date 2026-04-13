@@ -45,6 +45,9 @@
 #if defined(ENABLE_DIGMODE)
 	#include "app/digmode.h"
 #endif
+#ifdef ENABLE_CATMODE
+	#include "app/catmode.h"
+#endif
 
 #define DMA_INDEX(x, y) (((x) + (y)) % sizeof(UART_DMA_Buffer))
 #define UART_DMA_BUF_SIZE (sizeof(UART_DMA_Buffer))
@@ -524,6 +527,21 @@ bool UART_IsCommandAvailable(void)
 			const uint8_t nextByte = UART_DMA_Buffer[DMA_INDEX(gUART_WriteIndex, 1)];
 			if (nextByte >= 0x01 && nextByte <= DIGMODE_MAX_CMD) {
 				const uint16_t consumed = DIGMODE_ProcessByte(
+				    UART_DMA_Buffer, CommandLength, UART_DMA_BUF_SIZE, gUART_WriteIndex);
+				if (consumed == 0)
+					return false;
+				for (uint16_t k = 0; k < consumed; k++)
+					gUART_WriteIndex = DMA_INDEX(gUART_WriteIndex, 1);
+				continue;
+			}
+		}
+#endif
+
+#ifdef ENABLE_CATMODE
+		{
+			const uint8_t nextByte = UART_DMA_Buffer[DMA_INDEX(gUART_WriteIndex, 1)];
+			if (nextByte >= CAT_CMD_MIN && nextByte <= CAT_CMD_MAX) {
+				const uint16_t consumed = CAT_ProcessByte(
 				    UART_DMA_Buffer, CommandLength, UART_DMA_BUF_SIZE, gUART_WriteIndex);
 				if (consumed == 0)
 					return false;

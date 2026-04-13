@@ -32,6 +32,9 @@
 #if defined(ENABLE_DIGMODE)
 	#include "ui/digmode.h"
 #endif
+#ifdef ENABLE_CATMODE
+	#include "ui/catmode.h"
+#endif
 #ifdef ENABLE_FMRADIO
 	#include "ui/fmradio.h"
 #endif
@@ -65,6 +68,10 @@ void (*UI_DisplayFunctions[])(void) = {
 
 #if defined(ENABLE_DIGMODE)
 	[DISPLAY_DIGMODE] = &UI_DisplayDigmode,
+#endif
+
+#ifdef ENABLE_CATMODE
+	[DISPLAY_CATMODE] = &UI_DisplayCatmode,
 #endif
 };
 
