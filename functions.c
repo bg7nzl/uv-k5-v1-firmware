@@ -203,8 +203,11 @@ void FUNCTION_Transmit()
 		BK4819_TransmitTone(true, 650);
 	}
 
-	if (isAmTx)
-		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, (1u << 12) | 0x040);
+	if (isAmTx) {
+		BK4819_WriteRegister(BK4819_REG_47, (6u << 12) | (5u << 8) | (1u << 6));
+		uint16_t reg73 = BK4819_ReadRegister((BK4819_REGISTER_t)0x73U);
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x73U, reg73 | (1u << 4));
+	}
 
 	// turn the RED LED on
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);

@@ -1053,7 +1053,9 @@ void RADIO_SendEndOfTransmission(void)
 	if (gCurrentVfo != NULL &&
 		(gCurrentVfo->Modulation == MODULATION_AM || gCurrentVfo->Modulation == MODULATION_USB))
 	{
-		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x3516);
+		BK4819_SetAF(BK4819_AF_FM);
+		uint16_t reg73 = BK4819_ReadRegister((BK4819_REGISTER_t)0x73U);
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x73U, reg73 & ~(1u << 4));
 		RADIO_SetupRegisters(false);
 		return;
 	}
