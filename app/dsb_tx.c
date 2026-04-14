@@ -6,9 +6,12 @@
 #include "bsp/dp32g030/timerbase.h"
 #include "driver/bk4819.h"
 
-#define DSB_TX_SAMPLE_RATE_HZ 4000u
+#define DSB_TX_SAMPLE_RATE_HZ 100u
 #define DSB_TX_TIMER_DIV      0u
 #define SYSTEM_CLOCK_HZ       48000000u
+
+#define DSB_TX_ENV_GAIN       4u
+#define DSB_TX_DECAY_SHIFT    2
 
 typedef struct {
 	bool active;
@@ -17,11 +20,13 @@ typedef struct {
 	uint8_t max_bias;
 	uint8_t carrier_bias;
 	uint8_t pa_gain;
+	uint8_t prev_amp;
 	uint16_t initial_pa_reg;
 	uint32_t frequency;
 } DSB_State_t;
 
 static volatile DSB_State_t gDsbState;
+static volatile bool gDsbTickPending;
 
 static bool DSB_TX_TimerStart(const uint32_t sample_rate_hz)
 {
@@ -33,6 +38,8 @@ static bool DSB_TX_TimerStart(const uint32_t sample_rate_hz)
 		return false;
 
 	low_load = (uint16_t)(ticks - 1u);
+
+	gDsbTickPending = false;
 
 	SYSCON_DEV_CLK_GATE = (SYSCON_DEV_CLK_GATE & ~SYSCON_DEV_CLK_GATE_TIMER_BASE0_MASK) | SYSCON_DEV_CLK_GATE_TIMER_BASE0_BITS_ENABLE;
 
@@ -54,20 +61,34 @@ static void DSB_TX_TimerStop(void)
 	TIMER_BASE0_IE = 0u;
 	TIMER_BASE0_IF = TIMER_BASE_IF_LOW | TIMER_BASE_IF_HIGH;
 	NVIC_DisableIRQ((IRQn_Type)DP32_TIMER_BASE0_IRQn);
+	gDsbTickPending = false;
 }
 
 static uint8_t DSB_TX_ScaleAmplitude(const uint16_t raw)
 {
-	if (raw > 0x7F00u)
+	uint32_t scaled = (uint32_t)raw * DSB_TX_ENV_GAIN;
+
+	if (scaled > 0xFF00u)
 		return 255u;
 
-	return (uint8_t)(raw >> 7);
+	uint8_t amp = (uint8_t)(scaled >> 8);
+	return amp;
 }
 
 static void DSB_TX_ApplyEnvelope(void)
 {
-	const uint8_t amp = DSB_TX_ScaleAmplitude(BK4819_GetVoiceAmplitudeOut());
+	uint8_t amp = DSB_TX_ScaleAmplitude(BK4819_GetVoiceAmplitudeOut());
 	uint8_t bias;
+
+	if (amp > gDsbState.prev_amp) {
+		gDsbState.prev_amp = amp;
+	} else {
+		uint8_t decay = (gDsbState.prev_amp - amp) >> DSB_TX_DECAY_SHIFT;
+		if (decay == 0u && gDsbState.prev_amp > amp)
+			decay = 1u;
+		gDsbState.prev_amp -= decay;
+		amp = gDsbState.prev_amp;
+	}
 
 	if (gDsbState.suppress_carrier) {
 		bias = (uint8_t)(((uint16_t)amp * gDsbState.max_bias) / 255u);
@@ -93,6 +114,7 @@ bool DSB_TX_Start(const uint32_t frequency, const bool suppress_carrier)
 	gDsbState.carrier_bias = suppress_carrier ? 0u : (gDsbState.max_bias / 3u);
 	gDsbState.suppress_carrier = suppress_carrier;
 	gDsbState.frequency = frequency;
+	gDsbState.prev_amp = 0u;
 	gDsbState.timer_running = DSB_TX_TimerStart(DSB_TX_SAMPLE_RATE_HZ);
 	if (!gDsbState.timer_running)
 		return false;
@@ -119,11 +141,15 @@ bool DSB_TX_IsActive(void)
 	return gDsbState.active;
 }
 
-static void DSB_TX_Process(void)
+void DSB_TX_Poll(void)
 {
 	if (!gDsbState.active)
 		return;
 
+	if (!gDsbTickPending)
+		return;
+
+	gDsbTickPending = false;
 	DSB_TX_ApplyEnvelope();
 }
 
@@ -133,5 +159,5 @@ void HandlerTIMER_BASE0_Real(void)
 		return;
 
 	TIMER_BASE0_IF = TIMER_BASE_IF_LOW;
-	DSB_TX_Process();
+	gDsbTickPending = true;
 }

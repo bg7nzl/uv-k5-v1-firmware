@@ -1068,6 +1068,8 @@ void RADIO_SendEndOfTransmission(void)
 		BK4819_WriteRegister(BK4819_REG_40, 0x3516);
 		reg2b = BK4819_ReadRegister(BK4819_REG_2B);
 		BK4819_WriteRegister(BK4819_REG_2B, reg2b & ~((1u << 0) | (1u << 2)));
+		BK4819_WriteRegister(BK4819_REG_7D, 0xE940 | (gEeprom.MIC_SENSITIVITY_TUNING & 0x1f));
+		BK4819_SetCompander(0);
 		RADIO_SetupRegisters(false);
 		return;
 	}

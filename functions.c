@@ -210,17 +210,23 @@ void FUNCTION_Transmit()
 	}
 
 #ifdef ENABLE_DSB_TX
-	if (isAm) {
+	if (isAm || isUsb) {
 		uint16_t reg2b;
 
-		BK4819_SetTxDeviation(true, 0x0010);
+		BK4819_SetTxDeviation(true, 0x0040);
+
 		reg2b = BK4819_ReadRegister(BK4819_REG_2B);
 		BK4819_WriteRegister(BK4819_REG_2B, reg2b | (1u << 0) | (1u << 2));
-	} else if (isUsb) {
-		BK4819_SetTxDeviation(false, 0);
-		BK4819_EnterTxMute();
-		if (!DSB_TX_Start(gCurrentVfo->pTX->Frequency, true))
-			BK4819_ExitTxMute();
+
+		BK4819_WriteRegister(BK4819_REG_7D, 0xE940 | 31u);
+
+		BK4819_WriteRegister(BK4819_REG_29,
+			(2u  << 14) |
+			(86u <<  7) |
+			(64u <<  0));
+
+		if (isUsb)
+			DSB_TX_Start(gCurrentVfo->pTX->Frequency, true);
 	}
 #endif
 

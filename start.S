@@ -27,8 +27,6 @@
 
 	.global SystickHandler
 	.weak SystickHandler
-	.global HandlerTIMER_BASE0_Real
-	.weak HandlerTIMER_BASE0_Real
 
 	.section .text.isr
 
@@ -75,7 +73,7 @@ DMA:
 SARADC:
 	.long	HandlerSARADC + 1
 TIMER_BASE0:
-	.long	HandlerTIMER_BASE0_Real + 1
+	.long	HandlerTIMER_BASE0 + 1
 TIMER_BASE1:
 	.long	HandlerTIMER_BASE1 + 1
 TIMER_PLUS0:
@@ -161,8 +159,8 @@ HandlerDMA:
 HandlerSARADC:
 	b	.
 
-HandlerTIMER_BASE0_Real:
-	bx	lr
+HandlerTIMER_BASE0:
+	b	.
 
 HandlerTIMER_BASE1:
 	b	.
