@@ -21,6 +21,9 @@
 #ifdef ENABLE_DTMF
 #include "app/dtmf.h"
 #endif
+#ifdef ENABLE_DSB_TX
+#include "app/dsb_tx.h"
+#endif
 #ifdef ENABLE_FMRADIO
 	#include "app/fm.h"
 #endif
@@ -959,7 +962,12 @@ void RADIO_PrepareTX(void)
 	}
 #ifndef ENABLE_TX_WHEN_AM
 	else if (gCurrentVfo->Modulation != MODULATION_FM
-	         && gCurrentVfo->Modulation != MODULATION_CW) {
+	         && gCurrentVfo->Modulation != MODULATION_CW
+#ifdef ENABLE_DSB_TX
+	         && gCurrentVfo->Modulation != MODULATION_AM
+	         && gCurrentVfo->Modulation != MODULATION_USB
+#endif
+	         ) {
 		State = VFO_STATE_TX_DISABLE;
 	}
 #endif
@@ -1041,12 +1049,29 @@ void RADIO_SendEndOfTransmission(void)
 		BK4819_WriteRegister(BK4819_REG_70, 0x0000);
 		BK4819_WriteRegister(BK4819_REG_71, 0x0000);
 		BK4819_SetAF(BK4819_AF_MUTE);
-		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x3516);
+		BK4819_WriteRegister(BK4819_REG_40, 0x3516);
 		AUDIO_AudioPathOff();
 		gEnableSpeaker = false;
 		RADIO_SetupRegisters(false);
 		return;
 	}
+
+#ifdef ENABLE_DSB_TX
+	if (gCurrentVfo != NULL
+		&& (gCurrentVfo->Modulation == MODULATION_AM || gCurrentVfo->Modulation == MODULATION_USB))
+	{
+		uint16_t reg2b;
+
+		if (DSB_TX_IsActive())
+			DSB_TX_Stop();
+
+		BK4819_WriteRegister(BK4819_REG_40, 0x3516);
+		reg2b = BK4819_ReadRegister(BK4819_REG_2B);
+		BK4819_WriteRegister(BK4819_REG_2B, reg2b & ~((1u << 0) | (1u << 2)));
+		RADIO_SetupRegisters(false);
+		return;
+	}
+#endif
 
 	BK4819_PlayRoger();
 #ifdef ENABLE_DTMF

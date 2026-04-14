@@ -22,6 +22,9 @@
 #if defined(ENABLE_FMRADIO)
 	#include "app/fm.h"
 #endif
+#ifdef ENABLE_DSB_TX
+#include "app/dsb_tx.h"
+#endif
 #include "audio.h"
 #include "bsp/dp32g030/gpio.h"
 #include "dcs.h"
@@ -187,28 +190,49 @@ void FUNCTION_Transmit()
 	GUI_DisplayScreen();
 
 	const bool isCw = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_CW);
-	if (isCw)
+	bool isAm = false;
+	bool isUsb = false;
+#ifdef ENABLE_DSB_TX
+	isAm = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_AM);
+	isUsb = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_USB);
+#endif
+	if (isCw || isAm || isUsb)
 		RADIO_SetModulation(MODULATION_FM);
 
 	RADIO_SetTxParameters();
 
 	if (isCw) {
 		BK4819_SetAF(BK4819_AF_MUTE);
-		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x0000);
+		BK4819_SetTxDeviation(false, 0);
 		AUDIO_AudioPathOn();
 		gEnableSpeaker = true;
 		BK4819_TransmitTone(true, 650);
 	}
 
+#ifdef ENABLE_DSB_TX
+	if (isAm) {
+		uint16_t reg2b;
+
+		BK4819_SetTxDeviation(true, 0x0010);
+		reg2b = BK4819_ReadRegister(BK4819_REG_2B);
+		BK4819_WriteRegister(BK4819_REG_2B, reg2b | (1u << 0) | (1u << 2));
+	} else if (isUsb) {
+		BK4819_SetTxDeviation(false, 0);
+		BK4819_EnterTxMute();
+		if (!DSB_TX_Start(gCurrentVfo->pTX->Frequency, true))
+			BK4819_ExitTxMute();
+	}
+#endif
+
 	// turn the RED LED on
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);
 
 #ifdef ENABLE_DTMF
-	if (!isCw)
+	if (!isCw && !isAm && !isUsb)
 		DTMF_Reply();
 #endif
 
-	if (!isCw && gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
+	if (!isCw && !isAm && !isUsb && gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
 		BK4819_PlaySingleTone(2525, 250, 0, gEeprom.DTMF_SIDE_TONE);
 
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
@@ -233,10 +257,12 @@ void FUNCTION_Transmit()
 	}
 #endif
 
-	if (!isCw && gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
-		BK4819_EnableScramble(gCurrentVfo->SCRAMBLING_TYPE - 1);
-	else
-		BK4819_DisableScramble();
+	if (!isAm && !isUsb) {
+		if (!isCw && gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
+			BK4819_EnableScramble(gCurrentVfo->SCRAMBLING_TYPE - 1);
+		else
+			BK4819_DisableScramble();
+	}
 
 	if (gSetting_backlight_on_tx_rx & BACKLIGHT_ON_TR_TX) {
 		BACKLIGHT_TurnOn();

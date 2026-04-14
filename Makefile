@@ -48,6 +48,8 @@ ENABLE_BLMIN_TMP_OFF          ?= 0
 ENABLE_SCAN_RANGES            ?= 1
 # UART digital modes (FT8 etc.); requires ENABLE_UART=1
 ENABLE_DIGMODE                ?= 1
+# AM/USB experimental TX path (DSB/AM plan)
+ENABLE_DSB_TX                 ?= 0
 
 ifeq ($(ENABLE_DIGMODE),1)
 ifneq ($(ENABLE_UART),1)
@@ -161,6 +163,9 @@ ifeq ($(ENABLE_DIGMODE),1)
 	OBJS += app/digmode.o
 	OBJS += ui/digmode.o
 	OBJS += dsp/vernier.o
+endif
+ifeq ($(ENABLE_DSB_TX),1)
+	OBJS += app/dsb_tx.o
 endif
 ifeq ($(ENABLE_CATMODE),1)
 	OBJS += app/catmode.o
@@ -304,6 +309,9 @@ ifeq ($(ENABLE_UART),1)
 endif
 ifeq ($(ENABLE_DIGMODE),1)
 	CFLAGS += -DENABLE_DIGMODE
+endif
+ifeq ($(ENABLE_DSB_TX),1)
+	CFLAGS += -DENABLE_DSB_TX
 endif
 ifeq ($(ENABLE_CATMODE),1)
 	CFLAGS += -DENABLE_CATMODE

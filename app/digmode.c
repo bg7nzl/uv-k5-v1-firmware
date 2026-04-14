@@ -570,7 +570,7 @@ static void DoStopTx(void)
     BK4819_WriteRegister(BK4819_REG_70, 0x0000);
     BK4819_WriteRegister(BK4819_REG_71, 0x0000);
     BK4819_SetAF(BK4819_AF_MUTE);
-    BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x3516);
+    BK4819_WriteRegister(BK4819_REG_40, 0x3516);
 
     /* PA off */
     BK4819_SetupPowerAmplifier(0, 0);

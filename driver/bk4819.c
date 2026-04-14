@@ -687,6 +687,11 @@ void BK4819_SetupPowerAmplifier(const uint8_t bias, const uint32_t frequency)
 	BK4819_WriteRegister(BK4819_REG_36, (bias << 8) | (enable << 7) | (gain << 0));
 }
 
+void BK4819_SetTxDeviation(const bool enable, const uint16_t deviation)
+{
+	BK4819_WriteRegister(BK4819_REG_40, ((enable ? 1u : 0u) << 12) | (deviation & 0x0FFFu));
+}
+
 void BK4819_SetFrequency(uint32_t Frequency)
 {
 	BK4819_WriteRegister(BK4819_REG_38, (Frequency >>  0) & 0xFFFF);
