@@ -49,7 +49,7 @@ ENABLE_SCAN_RANGES            ?= 1
 # UART digital modes (FT8 etc.); requires ENABLE_UART=1
 ENABLE_DIGMODE                ?= 1
 # AM/USB experimental TX path (DSB/AM plan)
-ENABLE_DSB_TX                 ?= 1
+ENABLE_DSB_TX                 ?= 0
 
 ifeq ($(ENABLE_DIGMODE),1)
 ifneq ($(ENABLE_UART),1)

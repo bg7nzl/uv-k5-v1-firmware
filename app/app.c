@@ -48,9 +48,6 @@
 #ifdef ENABLE_CATMODE
 	#include "app/catmode.h"
 #endif
-#ifdef ENABLE_DSB_TX
-	#include "app/dsb_tx.h"
-#endif
 #include "ARMCM0.h"
 #include "audio.h"
 #include "board.h"
@@ -849,11 +846,6 @@ void APP_Update(void)
 
 		GUI_DisplayScreen();
 	}
-
-#ifdef ENABLE_DSB_TX
-	if (gCurrentFunction == FUNCTION_TRANSMIT)
-		DSB_TX_Poll();
-#endif
 
 	if (gReducedService)
 		return;
