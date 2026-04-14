@@ -7,9 +7,13 @@ Or:           cd tools/cat_control && python webui/server.py
 
 from __future__ import annotations
 
+import csv
+import json
 import os
 import sys
 import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -56,11 +60,108 @@ except ImportError:
     list_ports = None  # type: ignore
 
 _STATIC = Path(__file__).resolve().parent / "static"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+_CHANNELS_FILE = _DATA_DIR / "channels.json"
+_APPLY_LOG_FILE = _DATA_DIR / "apply_log.csv"
 
 app = Flask(__name__, static_folder=str(_STATIC), static_url_path="/static")
 
 _radio: Optional[CatRadio] = None
 _radio_lock = threading.Lock()
+_channels_lock = threading.Lock()
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _load_channels_raw() -> list[dict[str, Any]]:
+    if not _CHANNELS_FILE.is_file():
+        return []
+    try:
+        with open(_CHANNELS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [x for x in data if isinstance(x, dict)]
+
+
+def _save_channels_raw(rows: list[dict[str, Any]]) -> None:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _CHANNELS_FILE.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=2)
+    tmp.replace(_CHANNELS_FILE)
+
+
+_LOG_HEADER = ["utc_time", "rx_freq_mhz", "rx_tone_hz", "tx_offset_mhz", "offset_dir", "tx_tone_hz"]
+
+
+def _tone_hz(tone_type: int, tone_code: int) -> str:
+    """Return CTCSS frequency in Hz as string, or '0' if off."""
+    if tone_type == 1 and 0 <= tone_code < len(CTCSS_HZ10):
+        return str(CTCSS_HZ10[tone_code] / 10)
+    return "0"
+
+
+def _append_apply_log(body: dict[str, Any]) -> None:
+    """Append one CSV row to apply_log.csv after a successful apply."""
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        write_header = not _APPLY_LOG_FILE.is_file() or _APPLY_LOG_FILE.stat().st_size == 0
+        with open(_APPLY_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(_LOG_HEADER)
+            w.writerow([
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                body.get("rx_freq_mhz", ""),
+                _tone_hz(int(body.get("rx_tone_type", 0)), int(body.get("rx_tone_code", 0))),
+                body.get("tx_offset_mhz", ""),
+                body.get("offset_dir", ""),
+                _tone_hz(int(body.get("tx_tone_type", 0)), int(body.get("tx_tone_code", 0))),
+            ])
+    except Exception:
+        pass  # logging must never crash the main flow
+
+
+def _normalize_channel_in(body: dict[str, Any]) -> dict[str, Any]:
+    """Validate channel fields (CTCSS-only tone model: type 0/1)."""
+    name = str(body.get("name", ""))[:256]
+    note = str(body.get("note", ""))[:4096]
+    try:
+        rx = float(body["rx_freq_mhz"])
+        off = float(body["tx_offset_mhz"])
+        od = int(body["offset_dir"])
+        rt = int(body["rx_tone_type"])
+        rc = int(body["rx_tone_code"])
+        tt = int(body["tx_tone_type"])
+        tc = int(body["tx_tone_code"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise ValueError("missing or invalid numeric fields") from e
+    if not (0 < rx < 10000):
+        raise ValueError("rx_freq_mhz out of range")
+    if off < 0:
+        raise ValueError("tx_offset_mhz must be >= 0")
+    if od not in (0, 1, 2):
+        raise ValueError("offset_dir must be 0, 1, or 2")
+    if rt not in (0, 1) or tt not in (0, 1):
+        raise ValueError("tone_type must be 0 or 1")
+    rc &= 0xFFFF
+    tc &= 0xFFFF
+    return {
+        "name": name,
+        "note": note,
+        "rx_freq_mhz": round(rx, 5),
+        "tx_offset_mhz": round(off, 5),
+        "offset_dir": od,
+        "rx_tone_type": rt,
+        "rx_tone_code": rc,
+        "tx_tone_type": tt,
+        "tx_tone_code": tc,
+    }
 
 
 def _get_radio() -> Optional[CatRadio]:
@@ -289,6 +390,8 @@ def api_settings_post():
         if not params:
             return jsonify({"ok": False, "error": "no fields to set"}), 400
         r.set_params(params, apply_hw=apply_hw)
+        if apply_hw:
+            _append_apply_log(body)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -324,8 +427,75 @@ def api_meta():
     })
 
 
+def _channels_sort_key(row: dict[str, Any]) -> str:
+    return str(row.get("updated_at") or "")
+
+
+@app.route("/api/channels", methods=["GET"])
+def api_channels_list():
+    with _channels_lock:
+        rows = list(_load_channels_raw())
+    rows.sort(key=_channels_sort_key, reverse=True)
+    return jsonify({"channels": rows})
+
+
+@app.route("/api/channels", methods=["POST"])
+def api_channels_create():
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        norm = _normalize_channel_in(body)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    cid = str(uuid.uuid4())
+    row = {"id": cid, **norm, "updated_at": _iso_now()}
+    with _channels_lock:
+        rows = _load_channels_raw()
+        rows.append(row)
+        _save_channels_raw(rows)
+    return jsonify({"ok": True, "channel": row})
+
+
+@app.route("/api/channels/<cid>", methods=["GET"])
+def api_channels_get(cid: str):
+    with _channels_lock:
+        rows = _load_channels_raw()
+    for r in rows:
+        if r.get("id") == cid:
+            return jsonify(r)
+    return jsonify({"error": "not found"}), 404
+
+
+@app.route("/api/channels/<cid>", methods=["PUT"])
+def api_channels_put(cid: str):
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        norm = _normalize_channel_in(body)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    row = {"id": cid, **norm, "updated_at": _iso_now()}
+    with _channels_lock:
+        rows = _load_channels_raw()
+        for i, r in enumerate(rows):
+            if r.get("id") == cid:
+                rows[i] = row
+                _save_channels_raw(rows)
+                return jsonify({"ok": True, "channel": row})
+    return jsonify({"ok": False, "error": "not found"}), 404
+
+
+@app.route("/api/channels/<cid>", methods=["DELETE"])
+def api_channels_delete(cid: str):
+    with _channels_lock:
+        rows = _load_channels_raw()
+        new = [r for r in rows if r.get("id") != cid]
+        if len(new) == len(rows):
+            return jsonify({"ok": False, "error": "not found"}), 404
+        _save_channels_raw(new)
+    return jsonify({"ok": True})
+
+
 def main():
-    host = os.environ.get("CAT_WEB_HOST", "127.0.0.1")
+    host = os.environ.get("CAT_WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("CAT_WEB_PORT", "8765"))
     print(f"CAT Web UI: http://{host}:{port}/")
     app.run(host=host, port=port, threaded=True, use_reloader=False)

@@ -82,26 +82,32 @@
       sel.innerHTML = "";
       const z = document.createElement("option");
       z.value = "";
-      z.textContent = "— 选 CTCSS —";
+      z.textContent = "关";
       sel.appendChild(z);
       ctcssHz10.forEach((hz10, i) => {
         const o = document.createElement("option");
         o.value = String(i);
         const hz = hz10 / 10;
-        o.textContent = `${hz.toFixed(1)} Hz (#${i})`;
+        o.textContent = `${hz.toFixed(1)} Hz`;
         sel.appendChild(o);
       });
     };
-    mk("rx_ctcss_idx");
-    mk("tx_ctcss_idx");
+    mk("rx_ctcss");
+    mk("tx_ctcss");
+    mk("ch_rx_ctcss");
+    mk("ch_tx_ctcss");
   }
 
-  function onCtcssPick(which) {
-    const idxSel = $(which + "_ctcss_idx");
-    const v = idxSel.value;
-    if (v === "") return;
-    $(which + "_tone_type").value = "1";
-    $(which + "_tone_code").value = v;
+  /** CTCSS 下拉 → 协议参数（仅 CTCSS / 关） */
+  function toneFromCtcssSelect(selId) {
+    const v = $(selId).value;
+    if (v === "") return { tone_type: 0, tone_code: 0 };
+    const idx = parseInt(v, 10);
+    const n = ctcssHz10.length;
+    if (!Number.isFinite(idx) || idx < 0 || (n > 0 && idx >= n)) {
+      return { tone_type: 0, tone_code: 0 };
+    }
+    return { tone_type: 1, tone_code: idx };
   }
 
   function updatePowerLabel() {
@@ -109,17 +115,18 @@
     $("powerLabel").textContent = POWER_LABELS[p] || "?";
   }
 
+  function activateTab(name) {
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === name);
+    });
+    document.querySelectorAll(".panel").forEach((p) => {
+      p.classList.toggle("active", p.id === "panel-" + name);
+    });
+  }
+
   function setupTabs() {
     document.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const name = btn.dataset.tab;
-        document.querySelectorAll(".tab").forEach((b) =>
-          b.classList.toggle("active", b === btn)
-        );
-        document.querySelectorAll(".panel").forEach((p) => {
-          p.classList.toggle("active", p.id === "panel-" + name);
-        });
-      });
+      btn.addEventListener("click", () => activateTab(btn.dataset.tab));
     });
   }
 
@@ -131,7 +138,6 @@
     $("connPill").textContent = on ? "已连接 " + (port || "") : "未连接";
     $("connPill").classList.toggle("on", on);
     $("telemetry").hidden = !on;
-    $("mainPanels").hidden = !on;
     if (!on) {
       if (statusTimer) {
         clearInterval(statusTimer);
@@ -145,19 +151,20 @@
     const txEl = $("tx_freq_mhz");
     const hint = $("tx_freq_hint");
     const duplex = dir === 1 || dir === 2;
-    txEl.readOnly = duplex;
+    txEl.readOnly = true;
     if (hint) {
-      hint.textContent = duplex
-        ? "（= 接收 ± 偏移）"
-        : "";
+      hint.textContent = duplex ? "（= 接收 ± 偏移）" : "（= 接收频率）";
     }
+    const rx = parseFloat($("rx_freq_mhz").value);
+    if (!Number.isFinite(rx)) return;
     if (duplex) {
-      const rx = parseFloat($("rx_freq_mhz").value);
       const off = parseFloat($("tx_offset_mhz").value);
-      if (Number.isFinite(rx) && Number.isFinite(off)) {
-        const t = dir === 1 ? rx + off : rx - off;
-        txEl.value = t.toFixed(5);
-      }
+      if (!Number.isFinite(off)) return;
+      const t =
+        dir === 1 ? rx + off : rx >= off ? rx - off : 0;
+      txEl.value = t.toFixed(5);
+    } else {
+      txEl.value = rx.toFixed(5);
     }
   }
 
@@ -193,10 +200,16 @@
     num("tx_freq_mhz", s.tx_freq_mhz);
     num("tx_offset_mhz", s.tx_offset_mhz);
     num("offset_dir", s.offset_dir);
-    num("rx_tone_type", s.rx_tone_type);
-    num("tx_tone_type", s.tx_tone_type);
-    num("rx_tone_code", s.rx_tone_code);
-    num("tx_tone_code", s.tx_tone_code);
+    if (s.rx_tone_type === 1 && s.rx_tone_code < ctcssHz10.length) {
+      $("rx_ctcss").value = String(s.rx_tone_code);
+    } else {
+      $("rx_ctcss").value = "";
+    }
+    if (s.tx_tone_type === 1 && s.tx_tone_code < ctcssHz10.length) {
+      $("tx_ctcss").value = String(s.tx_tone_code);
+    } else {
+      $("tx_ctcss").value = "";
+    }
     num("modulation", s.modulation);
     num("bandwidth", s.bandwidth);
     num("tx_power", s.tx_power);
@@ -214,14 +227,6 @@
     $("mic_bar_ro").textContent = String(s.mic_bar ?? "—");
     $("rssi_raw_ro").textContent = String(s.rssi_raw ?? "—");
 
-    if (s.rx_tone_type === 1 && s.rx_tone_code < ctcssHz10.length) {
-      $("rx_ctcss_idx").value = String(s.rx_tone_code);
-    } else $("rx_ctcss_idx").value = "";
-
-    if (s.tx_tone_type === 1 && s.tx_tone_code < ctcssHz10.length) {
-      $("tx_ctcss_idx").value = String(s.tx_tone_code);
-    } else $("tx_ctcss_idx").value = "";
-
     updatePowerLabel();
     updateFreqLinkage();
   }
@@ -237,10 +242,6 @@
       "tx_freq_mhz",
       "tx_offset_mhz",
       "offset_dir",
-      "rx_tone_type",
-      "rx_tone_code",
-      "tx_tone_type",
-      "tx_tone_code",
       "modulation",
       "bandwidth",
       "tx_power",
@@ -274,7 +275,227 @@
         out[k] = v;
       }
     }
+    const rxT = toneFromCtcssSelect("rx_ctcss");
+    out.rx_tone_type = rxT.tone_type;
+    out.rx_tone_code = rxT.tone_code;
+    const txT = toneFromCtcssSelect("tx_ctcss");
+    out.tx_tone_type = txT.tone_type;
+    out.tx_tone_code = txT.tone_code;
     return out;
+  }
+
+  function channelPayloadFromForm() {
+    updateFreqLinkage();
+    const rxT = toneFromCtcssSelect("rx_ctcss");
+    const txT = toneFromCtcssSelect("tx_ctcss");
+    const dir = parseInt($("offset_dir").value, 10) || 0;
+    const rx = parseFloat($("rx_freq_mhz").value);
+    const off = parseFloat($("tx_offset_mhz").value);
+    if (!Number.isFinite(rx) || !Number.isFinite(off)) {
+      throw new Error("接收频率或发射偏移无效");
+    }
+    return {
+      rx_freq_mhz: rx,
+      tx_offset_mhz: off,
+      offset_dir: dir,
+      rx_tone_type: rxT.tone_type,
+      rx_tone_code: rxT.tone_code,
+      tx_tone_type: txT.tone_type,
+      tx_tone_code: txT.tone_code,
+    };
+  }
+
+  function applyChannelToForm(ch) {
+    $("rx_freq_mhz").value = String(ch.rx_freq_mhz);
+    $("tx_offset_mhz").value = String(ch.tx_offset_mhz);
+    $("offset_dir").value = String(ch.offset_dir);
+    if (ch.rx_tone_type === 1 && ch.rx_tone_code < ctcssHz10.length) {
+      $("rx_ctcss").value = String(ch.rx_tone_code);
+    } else {
+      $("rx_ctcss").value = "";
+    }
+    if (ch.tx_tone_type === 1 && ch.tx_tone_code < ctcssHz10.length) {
+      $("tx_ctcss").value = String(ch.tx_tone_code);
+    } else {
+      $("tx_ctcss").value = "";
+    }
+    updateFreqLinkage();
+  }
+
+  function ctcssLabel(ch, which) {
+    const t = which === "rx" ? ch.rx_tone_type : ch.tx_tone_type;
+    const c = which === "rx" ? ch.rx_tone_code : ch.tx_tone_code;
+    if (t === 1 && c < ctcssHz10.length) {
+      return (ctcssHz10[c] / 10).toFixed(1) + " Hz";
+    }
+    return "关";
+  }
+
+  function formatDuplex(ch) {
+    const od = ch.offset_dir;
+    const off = Number(ch.tx_offset_mhz);
+    if (od === 0) return "同频";
+    const sign = od === 1 ? "+" : "−";
+    return sign + off.toFixed(5) + " MHz";
+  }
+
+  function truncateNote(s, n) {
+    if (!s) return "—";
+    const t = String(s).trim();
+    if (t.length <= n) return t;
+    return t.slice(0, n) + "…";
+  }
+
+  function openChModal() {
+    $("chModal").hidden = false;
+    $("chModal").setAttribute("aria-hidden", "false");
+  }
+
+  function closeChModal() {
+    $("chModal").hidden = true;
+    $("chModal").setAttribute("aria-hidden", "true");
+  }
+
+  function channelToModal(ch) {
+    $("ch_id").value = ch.id || "";
+    $("ch_name").value = ch.name || "";
+    $("ch_note").value = ch.note || "";
+    $("ch_rx_freq_mhz").value = String(ch.rx_freq_mhz);
+    $("ch_tx_offset_mhz").value = String(ch.tx_offset_mhz);
+    $("ch_offset_dir").value = String(ch.offset_dir);
+    if (ch.rx_tone_type === 1 && ch.rx_tone_code < ctcssHz10.length) {
+      $("ch_rx_ctcss").value = String(ch.rx_tone_code);
+    } else {
+      $("ch_rx_ctcss").value = "";
+    }
+    if (ch.tx_tone_type === 1 && ch.tx_tone_code < ctcssHz10.length) {
+      $("ch_tx_ctcss").value = String(ch.tx_tone_code);
+    } else {
+      $("ch_tx_ctcss").value = "";
+    }
+  }
+
+  function payloadFromModal() {
+    const rxT = toneFromCtcssSelect("ch_rx_ctcss");
+    const txT = toneFromCtcssSelect("ch_tx_ctcss");
+    const rx = parseFloat($("ch_rx_freq_mhz").value);
+    const off = parseFloat($("ch_tx_offset_mhz").value);
+    const dir = parseInt($("ch_offset_dir").value, 10) || 0;
+    if (!Number.isFinite(rx) || !Number.isFinite(off)) {
+      throw new Error("接收频率或发射偏移无效");
+    }
+    return {
+      name: $("ch_name").value,
+      note: $("ch_note").value,
+      rx_freq_mhz: rx,
+      tx_offset_mhz: off,
+      offset_dir: dir,
+      rx_tone_type: rxT.tone_type,
+      rx_tone_code: rxT.tone_code,
+      tx_tone_type: txT.tone_type,
+      tx_tone_code: txT.tone_code,
+    };
+  }
+
+  async function loadChannelList() {
+    const data = await api("/api/channels");
+    const rows = data.channels || [];
+    const tb = $("channelTableBody");
+    tb.innerHTML = "";
+    for (const ch of rows) {
+      const tr = document.createElement("tr");
+      const tdName = document.createElement("td");
+      tdName.textContent = ch.name || "（未命名）";
+      const tdRx = document.createElement("td");
+      tdRx.className = "mono";
+      tdRx.textContent = Number(ch.rx_freq_mhz).toFixed(5);
+      const tdDup = document.createElement("td");
+      tdDup.className = "mono";
+      tdDup.textContent = formatDuplex(ch);
+      const tdRxa = document.createElement("td");
+      tdRxa.textContent = ctcssLabel(ch, "rx");
+      const tdTxa = document.createElement("td");
+      tdTxa.textContent = ctcssLabel(ch, "tx");
+      const tdNote = document.createElement("td");
+      tdNote.textContent = truncateNote(ch.note, 48);
+      const tdAct = document.createElement("td");
+      tdAct.className = "row-actions";
+      const bLoad = document.createElement("button");
+      bLoad.type = "button";
+      bLoad.className = "btn secondary btn-tiny";
+      bLoad.textContent = "载入";
+      bLoad.addEventListener("click", () => {
+        applyChannelToForm(ch);
+        activateTab("freq");
+        setMsg("已载入到频率表单", "ok");
+      });
+      const bEdit = document.createElement("button");
+      bEdit.type = "button";
+      bEdit.className = "btn secondary btn-tiny";
+      bEdit.textContent = "编辑";
+      bEdit.addEventListener("click", () => {
+        $("chModalTitle").textContent = "编辑频道";
+        channelToModal(ch);
+        openChModal();
+      });
+      const bDel = document.createElement("button");
+      bDel.type = "button";
+      bDel.className = "btn danger btn-tiny";
+      bDel.textContent = "删除";
+      bDel.addEventListener("click", async () => {
+        if (!confirm(`删除频道「${ch.name || ch.id}」？`)) return;
+        try {
+          await api(`/api/channels/${encodeURIComponent(ch.id)}`, {
+            method: "DELETE",
+          });
+          setMsg("已删除", "ok");
+          await loadChannelList();
+        } catch (e) {
+          setMsg(e.message || String(e), "err");
+        }
+      });
+      tdAct.appendChild(bLoad);
+      tdAct.appendChild(bEdit);
+      tdAct.appendChild(bDel);
+      tr.appendChild(tdName);
+      tr.appendChild(tdRx);
+      tr.appendChild(tdDup);
+      tr.appendChild(tdRxa);
+      tr.appendChild(tdTxa);
+      tr.appendChild(tdNote);
+      tr.appendChild(tdAct);
+      tb.appendChild(tr);
+    }
+  }
+
+  async function saveChModal() {
+    let body;
+    try {
+      body = payloadFromModal();
+    } catch (e) {
+      setMsg(e.message || String(e), "err");
+      return;
+    }
+    const id = $("ch_id").value.trim();
+    try {
+      if (id) {
+        await api(`/api/channels/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        setMsg("已保存", "ok");
+      } else {
+        await api("/api/channels", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        setMsg("已新建频道", "ok");
+      }
+      closeChModal();
+      await loadChannelList();
+    } catch (e) {
+      setMsg(e.message || String(e), "err");
+    }
   }
 
   async function reloadSettings() {
@@ -342,12 +563,6 @@
     ctcssHz10 = meta.ctcss_hz10 || [];
     fillCtcssSelects();
 
-    $("rx_ctcss_idx").addEventListener("change", () =>
-      onCtcssPick("rx")
-    );
-    $("tx_ctcss_idx").addEventListener("change", () =>
-      onCtcssPick("tx")
-    );
     $("tx_power").addEventListener("input", updatePowerLabel);
 
     ["rx_freq_mhz", "tx_offset_mhz"].forEach((id) => {
@@ -370,6 +585,50 @@
       doApply().catch((e) => setMsg(e.message, "err"))
     );
 
+    $("btnChannelSaveFromForm").addEventListener("click", () => {
+      try {
+        const p = channelPayloadFromForm();
+        $("chModalTitle").textContent = "保存为新频道";
+        channelToModal({
+          id: "",
+          name: "",
+          note: "",
+          ...p,
+        });
+        openChModal();
+      } catch (e) {
+        setMsg(e.message || String(e), "err");
+      }
+    });
+    $("btnChannelRefresh").addEventListener("click", () =>
+      loadChannelList().catch((e) => setMsg(e.message, "err"))
+    );
+    $("btnChannelNewEmpty").addEventListener("click", () => {
+      $("chModalTitle").textContent = "新建频道";
+      channelToModal({
+        id: "",
+        name: "",
+        note: "",
+        rx_freq_mhz: 145.0,
+        tx_offset_mhz: 0,
+        offset_dir: 0,
+        rx_tone_type: 0,
+        rx_tone_code: 0,
+        tx_tone_type: 0,
+        tx_tone_code: 0,
+      });
+      openChModal();
+    });
+    $("chModalSave").addEventListener("click", () =>
+      saveChModal().catch((e) => setMsg(e.message, "err"))
+    );
+    $("chModalCancel").addEventListener("click", closeChModal);
+    $("chModalBackdrop").addEventListener("click", closeChModal);
+    $("chModalCloseX").addEventListener("click", closeChModal);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && !$("chModal").hidden) closeChModal();
+    });
+
     try {
       await loadPorts();
     } catch (e) {
@@ -387,6 +646,12 @@
       }
     } catch (e) {
       /* ignore */
+    }
+
+    try {
+      await loadChannelList();
+    } catch (e) {
+      setMsg("频道列表加载失败: " + e.message, "err");
     }
   }
 
