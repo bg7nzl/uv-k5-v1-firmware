@@ -186,8 +186,11 @@ void FUNCTION_Transmit()
 
 	GUI_DisplayScreen();
 
-	const bool isCw = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_CW);
-	if (isCw)
+	const bool isCw  = (gCurrentVfo != NULL && gCurrentVfo->Modulation == MODULATION_CW);
+	const bool isAmTx = (gCurrentVfo != NULL &&
+		(gCurrentVfo->Modulation == MODULATION_AM || gCurrentVfo->Modulation == MODULATION_USB));
+
+	if (isCw || isAmTx)
 		RADIO_SetModulation(MODULATION_FM);
 
 	RADIO_SetTxParameters();
@@ -199,6 +202,9 @@ void FUNCTION_Transmit()
 		gEnableSpeaker = true;
 		BK4819_TransmitTone(true, 650);
 	}
+
+	if (isAmTx)
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, (1u << 12) | 0x040);
 
 	// turn the RED LED on
 	BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);

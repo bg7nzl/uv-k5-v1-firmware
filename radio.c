@@ -959,7 +959,9 @@ void RADIO_PrepareTX(void)
 	}
 #ifndef ENABLE_TX_WHEN_AM
 	else if (gCurrentVfo->Modulation != MODULATION_FM
-	         && gCurrentVfo->Modulation != MODULATION_CW) {
+	         && gCurrentVfo->Modulation != MODULATION_CW
+	         && gCurrentVfo->Modulation != MODULATION_AM
+	         && gCurrentVfo->Modulation != MODULATION_USB) {
 		State = VFO_STATE_TX_DISABLE;
 	}
 #endif
@@ -1044,6 +1046,14 @@ void RADIO_SendEndOfTransmission(void)
 		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x3516);
 		AUDIO_AudioPathOff();
 		gEnableSpeaker = false;
+		RADIO_SetupRegisters(false);
+		return;
+	}
+
+	if (gCurrentVfo != NULL &&
+		(gCurrentVfo->Modulation == MODULATION_AM || gCurrentVfo->Modulation == MODULATION_USB))
+	{
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x40U, 0x3516);
 		RADIO_SetupRegisters(false);
 		return;
 	}
