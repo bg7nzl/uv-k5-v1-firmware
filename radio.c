@@ -1056,6 +1056,11 @@ void RADIO_SendEndOfTransmission(void)
 		BK4819_SetAF(BK4819_AF_FM);
 		uint16_t reg73 = BK4819_ReadRegister((BK4819_REGISTER_t)0x73U);
 		BK4819_WriteRegister((BK4819_REGISTER_t)0x73U, reg73 & ~(1u << 4));
+		uint16_t reg2b = BK4819_ReadRegister(BK4819_REG_2B);
+		BK4819_WriteRegister(BK4819_REG_2B, reg2b & ~((1u << 0) | (1u << 1) | (1u << 2)));
+		BK4819_WriteRegister(BK4819_REG_7D, 0xE940 | (gEeprom.MIC_SENSITIVITY_TUNING & 0x1f));
+		uint16_t reg4b = BK4819_ReadRegister((BK4819_REGISTER_t)0x4BU);
+		BK4819_WriteRegister((BK4819_REGISTER_t)0x4BU, reg4b & ~(1u << 5));
 		RADIO_SetupRegisters(false);
 		return;
 	}
