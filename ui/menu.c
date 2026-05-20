@@ -651,7 +651,7 @@ void UI_DisplayMenu(void)
 			if (valid && !gAskForConfirmation)
 			{	// show the frequency so that the user knows the channels frequency
 				const uint32_t frequency = SETTINGS_FetchChannelFrequency(gSubMenuSelection);
-				sprintf(String, "%u.%05u", frequency / 100000, frequency % 100000);
+				UI_FormatFrequency(String, frequency, 0, false);
 				UI_PrintString(String, menu_item_x1, menu_item_x2, 4, 8);
 			}
 
@@ -687,7 +687,7 @@ void UI_DisplayMenu(void)
 
 				if (!gAskForConfirmation)
 				{	// show the frequency so that the user knows the channels frequency
-					sprintf(String, "%u.%05u", frequency / 100000, frequency % 100000);
+					UI_FormatFrequency(String, frequency, 0, false);
 					UI_PrintString(String, menu_item_x1, menu_item_x2, 4 + (gIsInSubMenu && edit_index >= 0), 8);
 				}
 			}

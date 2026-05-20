@@ -232,6 +232,8 @@ endif
 
 OBJCOPY = arm-none-eabi-objcopy
 SIZE = arm-none-eabi-size
+NM = arm-none-eabi-nm
+OBJDUMP = arm-none-eabi-objdump
 
 AUTHOR_STRING ?= EGZUMER
 # the user might not have/want git installed
@@ -421,7 +423,7 @@ ifeq ($(ENABLE_CUSTOM_MENU_LAYOUT),1)
 endif
 
 LDFLAGS =
-LDFLAGS += -z noexecstack -mcpu=cortex-m0 -nostartfiles -Wl,-T,firmware.ld -Wl,--gc-sections -Wl,--relax
+LDFLAGS += -z noexecstack -mcpu=cortex-m0 -nostartfiles -Wl,-T,firmware.ld -Wl,-Map,$(TARGET).map,--cref -Wl,--gc-sections -Wl,--relax
 
 # Use newlib-nano instead of newlib
 LDFLAGS += --specs=nano.specs
@@ -482,6 +484,11 @@ version.o: .FORCE
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@ $(LIBS)
 
+size-report: $(TARGET)
+	$(SIZE) -A $< > $<.sections
+	$(NM) --size-sort -S $< > $<.symbols
+	$(OBJDUMP) -d $< > $<.lst
+
 bsp/dp32g030/%.h: hardware/dp32g030/%.def
 
 %.o: %.c | $(BSP_HEADERS)
@@ -495,7 +502,7 @@ bsp/dp32g030/%.h: hardware/dp32g030/%.def
 -include $(DEPS)
 
 clean:
-	$(RM) $(call FixPath, $(TARGET).bin $(TARGET).packed.bin $(TARGET) $(OBJS) $(DEPS))
+	$(RM) $(call FixPath, $(TARGET).bin $(TARGET).packed.bin $(TARGET).map $(TARGET).sections $(TARGET).symbols $(TARGET).lst $(TARGET) $(OBJS) $(DEPS))
 
 doxygen:
 	doxygen

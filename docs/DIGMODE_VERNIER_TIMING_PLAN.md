@@ -8,6 +8,8 @@ isProject: false
 
 > 本文档是**独立计划**。阅读者不需要知道任何聊天记录，也不需要假设当前代码是谁写的。本文仅基于仓库中可见代码与文档，描述问题、约束、目标、实施步骤、验证方法与回退条件。
 
+> **音频线入测频（PA8 / SARADC）**：若需 **中断（方案 B）** 或 **DMA+FIFO（方案 C）** 的芯片资料与仓库映射，见 [`ADC_AUDIO_FREQ_MEASUREMENT_REF.md`](ADC_AUDIO_FREQ_MEASUREMENT_REF.md) 及 [`external/dp32g030/`](external/dp32g030/)。
+
 ## 1. 适用范围
 
 - 目标工程：`k5-v5`
