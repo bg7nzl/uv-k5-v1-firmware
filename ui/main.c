@@ -344,9 +344,9 @@ void UI_DisplayMain(void)
 #ifdef ENABLE_SCAN_RANGES
 			if(gScanRangeStart) {
 				UI_PrintString("ScnRng", 5, 0, line, 8);
-				sprintf(String, "%3u.%05u", gScanRangeStart / 100000, gScanRangeStart % 100000);
+				UI_FormatFrequency(String, gScanRangeStart, 3, false);
 				UI_PrintStringSmallNormal(String, 56, 0, line);
-				sprintf(String, "%3u.%05u", gScanRangeStop / 100000, gScanRangeStop % 100000);
+				UI_FormatFrequency(String, gScanRangeStop, 3, false);
 				UI_PrintStringSmallNormal(String, 56, 0, line + 1);
 				continue;
 			}
@@ -537,7 +537,7 @@ void UI_DisplayMain(void)
 				switch (gEeprom.CHANNEL_DISPLAY_MODE)
 				{
 					case MDF_FREQUENCY:	// show the channel frequency
-						sprintf(String, "%3u.%05u", frequency / 100000, frequency % 100000);
+						UI_FormatFrequency(String, frequency, 3, false);
 #ifdef ENABLE_BIG_FREQ
 						if(frequency < _1GHz_in_KHz) {
 							// show the remaining 2 small frequency digits
@@ -575,7 +575,7 @@ void UI_DisplayMain(void)
 						else {
 							UI_PrintStringSmallBold(String, 32 + 4, 0, line);
 							// show the channel frequency below the channel number/name
-							sprintf(String, "%03u.%05u", frequency / 100000, frequency % 100000);
+							UI_FormatFrequency(String, frequency, 3, true);
 							UI_PrintStringSmallNormal(String, 32 + 4, 0, line + 1);
 						}
 
@@ -584,7 +584,7 @@ void UI_DisplayMain(void)
 			}
 			else
 			{	// frequency mode
-				sprintf(String, "%3u.%05u", frequency / 100000, frequency % 100000);
+				UI_FormatFrequency(String, frequency, 3, false);
 
 #ifdef ENABLE_BIG_FREQ
 				if(frequency < _1GHz_in_KHz) {

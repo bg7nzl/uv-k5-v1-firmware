@@ -13,6 +13,8 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+#include <string.h>
+
 #include "app/spectrum.h"
 #include "am_fix.h"
 #include "audio.h"
@@ -725,12 +727,12 @@ static void DrawStatus() {
 }
 
 static void DrawF(uint32_t f) {
-  sprintf(String, "%u.%05u", f / 100000, f % 100000);
+  UI_FormatFrequency(String, f, 0, false);
   UI_PrintStringSmallNormal(String, 8, 127, 0);
 
   sprintf(String, "%3s", gModulationStr[settings.modulationType]);
   GUI_DisplaySmallest(String, 116, 1, false, true);
-  sprintf(String, "%s", bwOptions[settings.listenBw]);
+  strcpy(String, bwOptions[settings.listenBw]);
   GUI_DisplaySmallest(String, 108, 7, false, true);
 }
 
@@ -744,19 +746,19 @@ static void DrawNums() {
   }
 
   if (IsCenterMode()) {
-    sprintf(String, "%u.%05u \x7F%u.%02uk", currentFreq / 100000,
-            currentFreq % 100000, settings.frequencyChangeStep / 100,
+    char *tail = UI_FormatFrequency(String, currentFreq, 0, false);
+    sprintf(tail, " \x7F%u.%02uk", settings.frequencyChangeStep / 100,
             settings.frequencyChangeStep % 100);
     GUI_DisplaySmallest(String, 36, 49, false, true);
   } else {
-    sprintf(String, "%u.%05u", GetFStart() / 100000, GetFStart() % 100000);
+    UI_FormatFrequency(String, GetFStart(), 0, false);
     GUI_DisplaySmallest(String, 0, 49, false, true);
 
     sprintf(String, "\x7F%u.%02uk", settings.frequencyChangeStep / 100,
             settings.frequencyChangeStep % 100);
     GUI_DisplaySmallest(String, 48, 49, false, true);
 
-    sprintf(String, "%u.%05u", GetFEnd() / 100000, GetFEnd() % 100000);
+    UI_FormatFrequency(String, GetFEnd(), 0, false);
     GUI_DisplaySmallest(String, 93, 49, false, true);
   }
 }
@@ -1065,7 +1067,7 @@ static void RenderStill() {
         gFrameBuffer[row + 1][j + offset] = 0xFF;
       }
     }
-    sprintf(String, "%s", registerSpecs[idx].name);
+    strcpy(String, registerSpecs[idx].name);
     GUI_DisplaySmallest(String, offset + 2, row * 8 + 2, false,
                         menuState != idx);
     sprintf(String, "%u", GetRegMenuValue(idx));

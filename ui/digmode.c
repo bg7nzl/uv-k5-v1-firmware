@@ -51,10 +51,7 @@ void UI_DisplayDigmode(void)
 
     /* Row 1-2: base TX frequency in MHz (large font) */
     {
-        uint32_t f = d->base_freq;  // 10 Hz units
-        uint32_t mhz  = f / 100000;
-        uint32_t frac = f % 100000;
-        sprintf(buf, "%3u.%05u", (unsigned)mhz, (unsigned)frac);
+        UI_FormatFrequency(buf, d->base_freq, 3, false);
         UI_DisplayFrequency(buf, 16, 1, false);
     }
 
@@ -81,10 +78,10 @@ void UI_DisplayDigmode(void)
 
     /* Row 4: actual RF output frequency */
     {
-        uint32_t f = d->cur_rf_freq;
-        uint32_t mhz  = f / 100000;
-        uint32_t frac = f % 100000;
-        sprintf(buf, "RF:%3u.%05u", (unsigned)mhz, (unsigned)frac);
+        buf[0] = 'R';
+        buf[1] = 'F';
+        buf[2] = ':';
+        UI_FormatFrequency(buf + 3, d->cur_rf_freq, 3, false);
         UI_PrintStringSmallNormal(buf, 0, 0, 5);
     }
 

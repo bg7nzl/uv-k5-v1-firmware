@@ -65,6 +65,37 @@ void UI_GenerateChannelStringEx(char *pString, const bool bShowPrefix, const uin
 	}
 }
 
+char *__attribute__((noinline)) UI_FormatFrequency(char *pString, uint32_t frequency, uint8_t mhzWidth, bool zeroPad)
+{
+	uint32_t mhz      = frequency / 100000;
+	uint32_t fraction = frequency % 100000;
+	char     digits[10];
+	uint8_t  length = 0;
+
+	do {
+		digits[length++] = '0' + (mhz % 10);
+		mhz /= 10;
+	} while (mhz > 0);
+
+	while (length < mhzWidth) {
+		*pString++ = zeroPad ? '0' : ' ';
+		mhzWidth--;
+	}
+
+	while (length > 0)
+		*pString++ = digits[--length];
+
+	*pString++ = '.';
+
+	for (uint32_t divisor = 10000; divisor > 0; divisor /= 10) {
+		*pString++ = '0' + (fraction / divisor);
+		fraction %= divisor;
+	}
+
+	*pString = 0;
+	return pString;
+}
+
 void UI_PrintStringBuffer(const char *pString, uint8_t * buffer, uint32_t char_width, const uint8_t *font)
 {
 	const size_t Length = strlen(pString);
